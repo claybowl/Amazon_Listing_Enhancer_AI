@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import { type AIModel, AIProvider, ModelType, getDefaultModel } from "../types/models"
+import { type AIModel, AIProvider, ModelType, getDefaultModel, getModelById } from "../types/models"
 
 interface AIContextType {
   // API Keys
@@ -69,12 +69,23 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
 
     loadApiKeys()
 
-    // Set default models
-    const defaultTextModel = getDefaultModel(ModelType.Text)
-    const defaultImageModel = getDefaultModel(ModelType.Image)
+    // Set default models - prefer OpenAI over Gemini due to issues
+    const openaiTextModel = getModelById("gpt-4o")
+    const openaiImageModel = getModelById("dall-e-3")
 
-    if (defaultTextModel) setSelectedTextModel(defaultTextModel)
-    if (defaultImageModel) setSelectedImageModel(defaultImageModel)
+    if (openaiTextModel) {
+      setSelectedTextModel(openaiTextModel)
+    } else {
+      const defaultTextModel = getDefaultModel(ModelType.Text)
+      if (defaultTextModel) setSelectedTextModel(defaultTextModel)
+    }
+
+    if (openaiImageModel) {
+      setSelectedImageModel(openaiImageModel)
+    } else {
+      const defaultImageModel = getDefaultModel(ModelType.Image)
+      if (defaultImageModel) setSelectedImageModel(defaultImageModel)
+    }
 
     // Check for server API keys
     checkServerApiKeys()

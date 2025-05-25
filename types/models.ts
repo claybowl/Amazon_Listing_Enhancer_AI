@@ -167,9 +167,9 @@ export const AI_MODELS: AIModel[] = [
     type: ModelType.Image,
     description: "Google's advanced image generation model",
     capabilities: ["High-quality images", "Photorealistic outputs", "Strong prompt following"],
-    isAvailable: true,
+    isAvailable: false,
     apiKeyRequired: true,
-    defaultModel: true,
+    defaultModel: false,
   },
 
   // Image Models - Stability AI

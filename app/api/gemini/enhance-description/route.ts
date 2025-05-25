@@ -1,11 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { GoogleGenAI } from "@google/genai"
 
 // Get API key from environment variables
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY
-
-// Initialize the Google Generative AI client
-const genAI = GEMINI_API_KEY ? new GoogleGenAI(GEMINI_API_KEY) : null
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY
 
 export async function HEAD(request: NextRequest) {
   // Simple HEAD request handler to check if the route exists
@@ -15,7 +11,8 @@ export async function HEAD(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // Check if API key is configured
-    if (!GEMINI_API_KEY || !genAI) {
+    if (!GEMINI_API_KEY) {
+      console.error("Gemini API Key not found in environment variables")
       return NextResponse.json({ error: "Gemini API Key not configured on the server." }, { status: 500 })
     }
 
@@ -24,6 +21,7 @@ export async function POST(request: NextRequest) {
     try {
       body = await request.json()
     } catch (e) {
+      console.error("Failed to parse request body:", e)
       return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 })
     }
 
@@ -36,7 +34,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const model = genAI.getGenerativeModel({ model: modelId })
+    console.log("Using Gemini API with model:", modelId)
 
     const originalCharCount = originalDescription.length
     const originalWordCount = originalDescription.trim().split(/\s+/).filter(Boolean).length
@@ -73,53 +71,107 @@ Output ONLY a valid JSON object with the following exact schema:
 
 Do NOT include any other text, explanations, or markdown formatting outside of this JSON object. Just the JSON.`
 
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        responseMimeType: "application/json",
-      },
-    })
-
-    const response = result.response
-    let jsonStr = response.text()
-
-    // Handle potential markdown code blocks in the response
-    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s
-    const match = jsonStr.match(fenceRegex)
-    if (match && match[2]) {
-      jsonStr = match[2].trim()
-    }
-
-    let parsedData
     try {
-      parsedData = JSON.parse(jsonStr)
-    } catch (e) {
-      console.error("Failed to parse JSON response:", jsonStr, e)
+      console.log("Calling Gemini API using fetch...")
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: prompt,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.7,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 1024,
+              responseMimeType: "application/json",
+            },
+          }),
+        },
+      )
+
+      console.log("Gemini API response status:", response.status)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error("Gemini API error response:", errorData)
+
+        if (response.status === 401 || response.status === 403) {
+          return NextResponse.json({ error: "Invalid Gemini API key" }, { status: 401 })
+        }
+
+        if (response.status === 429) {
+          return NextResponse.json({ error: "Gemini rate limit exceeded. Please try again later." }, { status: 429 })
+        }
+
+        return NextResponse.json(
+          { error: errorData.error?.message || "Gemini API request failed" },
+          { status: response.status },
+        )
+      }
+
+      const data = await response.json()
+      console.log("Gemini API response received successfully")
+
+      const content = data.candidates?.[0]?.content?.parts?.[0]?.text
+
+      if (!content) {
+        console.error("No content returned from Gemini")
+        return NextResponse.json({ error: "No content returned from Gemini" }, { status: 500 })
+      }
+
+      console.log("Parsing Gemini response content")
+      let parsedData
+      try {
+        parsedData = JSON.parse(content)
+      } catch (e) {
+        console.error("Failed to parse JSON response:", content, e)
+        return NextResponse.json(
+          { error: "Failed to parse AI response as JSON. The response may not be in the expected format." },
+          { status: 500 },
+        )
+      }
+
+      if (!parsedData.enhanced_description || typeof parsedData.generation_context === "undefined") {
+        console.error("Parsed JSON is missing required fields:", parsedData)
+        return NextResponse.json(
+          { error: "AI response JSON is missing 'enhanced_description' or 'generation_context'." },
+          { status: 500 },
+        )
+      }
+
+      return NextResponse.json({
+        enhancedDescription: parsedData.enhanced_description.trim(),
+        generationContext: parsedData.generation_context.trim(),
+      })
+    } catch (fetchError: any) {
+      console.error("Error calling Gemini API:", fetchError)
+      console.error("Error details:", fetchError.message, fetchError.stack)
+
       return NextResponse.json(
-        { error: "Failed to parse AI response as JSON. The response may not be in the expected format." },
+        {
+          error: `Failed to call Gemini API: ${fetchError.message || "Unknown error"}`,
+        },
         { status: 500 },
       )
     }
-
-    if (!parsedData.enhanced_description || typeof parsedData.generation_context === "undefined") {
-      console.error("Parsed JSON is missing required fields:", parsedData)
-      return NextResponse.json(
-        { error: "AI response JSON is missing 'enhanced_description' or 'generation_context'." },
-        { status: 500 },
-      )
-    }
-
-    return NextResponse.json({
-      enhancedDescription: parsedData.enhanced_description.trim(),
-      generationContext: parsedData.generation_context.trim(),
-    })
-  } catch (error) {
-    console.error("Error in Gemini enhance-description API route:", error)
+  } catch (error: any) {
+    console.error("Unexpected error in Gemini enhance-description API route:", error)
+    console.error("Error stack:", error.stack)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "An unknown error occurred" },
+      { error: `Server error: ${error.message || "An unknown error occurred"}` },
       { status: 500 },
     )
   }

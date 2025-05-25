@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 })
     }
 
-    const { originalDescription, productName, modelId = "anthropic/claude-3-opus" } = body
+    const { originalDescription, productName, modelId = "anthropic/claude-3-opus", tone, style } = body
 
     if (!originalDescription || !productName) {
       return NextResponse.json(
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const originalCharCount = originalDescription.length
     const originalWordCount = originalDescription.trim().split(/\s+/).filter(Boolean).length
 
-    const prompt = `You are an expert Amazon listing copywriter.
+    let prompt = `You are an expert Amazon listing copywriter.
 Your task is to rewrite the provided product description for "${productName}" and provide context for your changes.
 
 Original Product Name: "${productName}"
@@ -46,7 +46,16 @@ ${originalDescription}
 
 Original Description Length:
 - Characters: ${originalCharCount}
-- Words: ${originalWordCount}
+- Words: ${originalWordCount}`
+
+    if (tone) {
+      prompt += `\n- The tone of the description should be ${tone}.`
+    }
+    if (style) {
+      prompt += `\n- The output style for the description should be primarily ${style}.`
+    }
+
+    prompt += `
 
 Instructions:
 1. Rewrite the "Original Description" to be highly compelling, benefit-driven, and optimized for Amazon.

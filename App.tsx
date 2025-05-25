@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useCallback } from "react"
-import { type ProductDetails, type EnhancedProductDetails, AppStep } from "./types"
+import { type ProductDetails, type EnhancedProductDetails, AppStep, type SourceImageOptions } from "./types" // Import SourceImageOptions
 import { AIContextProvider } from "./contexts/AIContext"
 import ProductInputForm from "./components/ProductInputForm"
 import EnhancedListingDisplay from "./components/EnhancedListingDisplay"
@@ -13,7 +13,7 @@ import { generateEnhancedDescription, generateProductImages } from "./services/a
 import { SparklesIcon, ArrowPathIcon } from "./components/icons"
 
 const AppContent: React.FC = () => {
-  const { selectedTextModel, selectedImageModel, apiKeys } = useAI()
+  const { selectedTextModel, selectedImageModel /* apiKeys removed */ } = useAI()
   const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.Input)
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
   const [enhancedDetails, setEnhancedDetails] = useState<EnhancedProductDetails | null>(null)
@@ -32,11 +32,14 @@ const AppContent: React.FC = () => {
       setEnhancedDetails(null) // Clear previous enhancements
 
       try {
+        // The apiKeys argument was identified as incorrect in the prompt.
+        // aiService.ts does not expect it, and the backend routes handle API keys.
         const { enhancedDescription, generationContext } = await generateEnhancedDescription(
           selectedTextModel,
           details.originalDescription,
           details.name,
-          apiKeys[selectedTextModel.provider],
+          details.tone,
+          details.style,
         )
 
         setEnhancedDetails({
@@ -45,6 +48,9 @@ const AppContent: React.FC = () => {
           generationContext: generationContext,
           generatedImagePrompts: [],
           generatedImages: [],
+          // Persist tone and style in enhancedDetails
+          tone: details.tone,
+          style: details.style,
         })
         setCurrentStep(AppStep.DisplayEnhanced)
       } catch (err) {
@@ -57,11 +63,13 @@ const AppContent: React.FC = () => {
         setCurrentStep(AppStep.Input)
       }
     },
-    [selectedTextModel, apiKeys],
+    [selectedTextModel /* apiKeys removed */],
   )
 
+  // SourceImageOptionsForApp interface is removed from here
+
   const handleImageGeneration = useCallback(
-    async (prompt: string, numberOfImages: number) => {
+    async (prompt: string, numberOfImages: number, sourceImageOptions?: SourceImageOptions) => { // Use imported SourceImageOptions
       if (!selectedImageModel) {
         setError("No image generation model selected.")
         return
@@ -76,18 +84,23 @@ const AppContent: React.FC = () => {
       setError(null)
 
       try {
-        const images = await generateProductImages(
-          selectedImageModel,
-          prompt,
-          numberOfImages,
-          apiKeys[selectedImageModel.provider],
-        )
+        // Removed apiKeys[selectedImageModel.provider] from the call
+        const images = await generateProductImages(selectedImageModel, prompt, numberOfImages, sourceImageOptions)
 
         setEnhancedDetails((prevDetails) => {
           if (!prevDetails) return null
+          // Logic for storing prompts needs to be robust.
+          // If sourceImageOptions is used, the 'prompt' might be an instruction or the original prompt.
+          // The current logic just appends the passed 'prompt'.
+          const newPrompts = sourceImageOptions?.sourceImage && prevDetails.generatedImagePrompts.length > 0
+            ? [...prevDetails.generatedImagePrompts] // Avoid duplicating prompt if it's from an existing image
+            : [...prevDetails.generatedImagePrompts, prompt];
+
+
           return {
             ...prevDetails,
-            generatedImagePrompts: [...prevDetails.generatedImagePrompts, prompt], // Store the prompt used
+            // Ensure generatedImagePrompts aligns with generatedImages if multiple images from one source/prompt
+            generatedImagePrompts: newPrompts,
             generatedImages: [...prevDetails.generatedImages, ...images],
           }
         })
@@ -98,7 +111,7 @@ const AppContent: React.FC = () => {
         setCurrentStep(AppStep.DisplayEnhanced)
       }
     },
-    [enhancedDetails, selectedImageModel, apiKeys],
+    [enhancedDetails, selectedImageModel /* apiKeys removed */],
   )
 
   const handleReset = () => {

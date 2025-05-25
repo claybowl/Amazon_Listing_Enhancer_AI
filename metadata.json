@@ -1,0 +1,6 @@
+{
+  "name": "Amazon Listing Enhancer AI",
+  "description": "An application to enhance Amazon product listings using AI. It refactors product descriptions and generates new images based on user input.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}

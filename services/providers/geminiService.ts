@@ -1,5 +1,7 @@
 // Gemini provider implementation
 
+import { GoogleGenerativeAI } from "@google/generative-ai"
+
 export async function geminiTextGeneration(
   modelId: string,
   originalDescription: string,
@@ -124,8 +126,7 @@ async function clientSideGeminiTextGeneration(
   }
 
   // Import GoogleGenAI dynamically only when needed for client-side fallback
-  const { GoogleGenAI } = await import("@google/genai")
-  const genAI = new GoogleGenAI(apiKey)
+  const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({ model: modelId })
 
   const originalCharCount = originalDescription.length
@@ -214,8 +215,7 @@ async function clientSideGeminiImageGeneration(
   }
 
   // Import GoogleGenAI dynamically only when needed for client-side fallback
-  const { GoogleGenAI } = await import("@google/genai")
-  const genAI = new GoogleGenAI(apiKey)
+  const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({ model: modelId })
 
   if (numberOfImages < 1 || numberOfImages > 4) {

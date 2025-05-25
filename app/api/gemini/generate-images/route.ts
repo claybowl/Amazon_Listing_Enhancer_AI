@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generativeai"
+import { GoogleGenerativeAI } from "@google/generative-ai"
 import { type NextRequest, NextResponse } from "next/server"
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
@@ -21,13 +21,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
     }
 
-    // Gemini doesn't actually support image generation through the standard SDK
+    // Gemini doesn't support image generation through the standard SDK
     return NextResponse.json(
       {
         error:
-          "Image generation is not supported by Gemini through this route. Please use a different service or method.",
+          "Image generation is not supported by Gemini through this route. Please use a different service like OpenAI, Stability AI, or Replicate.",
       },
-      { status: 500 },
+      { status: 501 },
     )
 
     // const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" }) // Or another appropriate model

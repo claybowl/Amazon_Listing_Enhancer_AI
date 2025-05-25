@@ -1,4 +1,5 @@
 import type { GenerateProductDescriptionParams, GenerateProductImagesParams } from "@/types"
+import { GoogleGenerativeAI } from "@google/generative-ai"
 
 const TEXT_MODEL_NAME = "gemini-pro"
 
@@ -14,9 +15,7 @@ export const generateProductDescription = async ({
       throw new Error("GOOGLE_GEN_AI_API_KEY environment variable is not set.")
     }
 
-    const { GoogleGenerativeAI } = await import("@google/generativeai")
     const ai = new GoogleGenerativeAI(clientApiKey)
-
     const model = ai.getGenerativeModel({ model: TEXT_MODEL_NAME })
 
     const prompt = `
@@ -29,11 +28,17 @@ export const generateProductDescription = async ({
       The description should be engaging, informative, and highlight the key benefits of the product. Keep it concise and within 150 words.
     `
 
-    const response = await model.generateContent({
+    const result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+      },
     })
 
-    const text = response.response.text()
+    const response = result.response
+    const text = response.text()
     return text
   } catch (error: any) {
     console.error("Error generating product description:", error)

@@ -1,17 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { GoogleGenAI } from "@google/genai"
+import { GoogleGenerativeAI } from "@google/generative-ai"
 
 // Get API key from environment variables
 const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY
 
 // Initialize the Google Generative AI client
-const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null
+const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null
 const TEXT_MODEL_NAME = "gemini-2.5-flash-preview-04-17"
+const model = genAI?.getGenerativeModel({ model: TEXT_MODEL_NAME })
 
 export async function POST(request: NextRequest) {
   try {
     // Check if API key is configured
-    if (!API_KEY || !ai) {
+    if (!API_KEY || !genAI) {
       return NextResponse.json({ error: "Gemini API Key not configured on the server." }, { status: 500 })
     }
 
@@ -60,29 +61,31 @@ Output ONLY a valid JSON object with the following exact schema:
 
 Do NOT include any other text, explanations, or markdown formatting outside of this JSON object. Just the JSON.`
 
-    const response = await ai.models.generateContent({
-      model: TEXT_MODEL_NAME,
-      contents: prompt,
-      config: {
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
         temperature: 0.6,
-        topP: 0.95,
         topK: 40,
+        topP: 0.95,
         responseMimeType: "application/json",
       },
     })
 
-    let jsonStr = response.text.trim()
+    const response = result.response
+    const jsonStr = response.text()
+
+    let jsonStrTrimmed = jsonStr.trim()
     const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s
-    const match = jsonStr.match(fenceRegex)
+    const match = jsonStrTrimmed.match(fenceRegex)
     if (match && match[2]) {
-      jsonStr = match[2].trim()
+      jsonStrTrimmed = match[2].trim()
     }
 
     let parsedData
     try {
-      parsedData = JSON.parse(jsonStr)
+      parsedData = JSON.parse(jsonStrTrimmed)
     } catch (e) {
-      console.error("Failed to parse JSON response:", jsonStr, e)
+      console.error("Failed to parse JSON response:", jsonStrTrimmed, e)
       return NextResponse.json(
         { error: "Failed to parse AI response as JSON. The response may not be in the expected format." },
         { status: 500 },

@@ -2,9 +2,10 @@
 
 import type React from "react"
 import { useState, useCallback, useMemo } from "react"
-import type { EnhancedProductDetails } from "../types"
+import type { EnhancedProductDetails, SourceImageOptions, FeedbackData } from "../types" // Import FeedbackData
 import { ModelType } from "../types/models"
 import { useAI } from "../contexts/AIContext"
+import { submitFeedback } from "../services/feedbackService" // Import submitFeedback
 import LoadingSpinner from "./LoadingSpinner"
 import ModelSelector from "./ModelSelector"
 import {
@@ -16,11 +17,20 @@ import {
   ArrowDownTrayIcon,
   XCircleIcon,
   ChatBubbleLeftRightIcon,
+  PencilSquareIcon, // Added for "Use as Basis"
+  HandThumbUpIcon, // Added for feedback
+  HandThumbDownIcon, // Added for feedback
 } from "./icons"
+
+// Remove local SourceImageOptionsForFrontend, use imported SourceImageOptions
 
 interface EnhancedListingDisplayProps {
   details: EnhancedProductDetails
-  onGenerateImages: (prompt: string, numberOfImages: number) => Promise<void>
+  onGenerateImages: (
+    prompt: string,
+    numberOfImages: number,
+    sourceImageOptions?: SourceImageOptions, // Use imported type
+  ) => Promise<void>
   isGeneratingImages: boolean
 }
 
@@ -29,7 +39,7 @@ const EnhancedListingDisplay: React.FC<EnhancedListingDisplayProps> = ({
   onGenerateImages,
   isGeneratingImages: propIsGeneratingImages,
 }) => {
-  const { selectedImageModel } = useAI()
+  const { selectedImageModel, selectedTextModel, aiModels } = useAI() // Added selectedTextModel
 
   const initialImagePrompt = useMemo(() => {
     let prompt = `High-quality product photo of "${details.name}"`
@@ -47,6 +57,63 @@ const EnhancedListingDisplay: React.FC<EnhancedListingDisplayProps> = ({
   const [numImages, setNumImages] = useState<number>(1)
   const [isDescriptionCopied, setIsDescriptionCopied] = useState(false)
   const [internalIsGeneratingImages, setInternalIsGeneratingImages] = useState(false)
+  const [descriptionFeedback, setDescriptionFeedback] = useState<'good' | 'bad' | null>(null)
+  const [descriptionFeedbackSubmitted, setDescriptionFeedbackSubmitted] = useState(false)
+  const [imageFeedback, setImageFeedback] = useState<{ [index: number]: 'good' | 'bad' }>({})
+  const [imageFeedbackSubmitted, setImageFeedbackSubmitted] = useState<{ [index: number]: boolean }>({})
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
+
+
+  const handleDescriptionFeedback = async (rating: 'good' | 'bad') => {
+    if (!selectedTextModel || descriptionFeedbackSubmitted) return;
+
+    const feedbackData: FeedbackData = {
+      contentType: 'description',
+      contentReference: details.enhancedDescription.substring(0, 100),
+      modelId: selectedTextModel.id,
+      rating,
+      timestamp: new Date().toISOString(),
+    };
+
+    try {
+      await submitFeedback(feedbackData);
+      setDescriptionFeedback(rating);
+      setDescriptionFeedbackSubmitted(true);
+      setFeedbackError(null);
+    } catch (error) {
+      console.error("Error submitting description feedback:", error);
+      setFeedbackError("Failed to submit feedback. Please try again.");
+      // Optionally reset feedback state if submission fails persistently
+      // setDescriptionFeedback(null);
+      // setDescriptionFeedbackSubmitted(false);
+    }
+  };
+
+  const handleImageFeedback = async (index: number, base64Image: string, rating: 'good' | 'bad') => {
+    if (!selectedImageModel || imageFeedbackSubmitted[index]) return;
+
+    // Use the specific prompt for this image if available, otherwise a general reference
+    const promptForImage = details.generatedImagePrompts[details.generatedImagePrompts.length - details.generatedImages.length + index] || initialImagePrompt;
+
+    const feedbackData: FeedbackData = {
+      contentType: 'image',
+      contentReference: `Image index ${index} from prompt: ${promptForImage.substring(0,100)}...`, // Snippet of prompt
+      modelId: selectedImageModel.id,
+      rating,
+      timestamp: new Date().toISOString(),
+    };
+
+    try {
+      await submitFeedback(feedbackData);
+      setImageFeedback(prev => ({ ...prev, [index]: rating }));
+      setImageFeedbackSubmitted(prev => ({ ...prev, [index]: true }));
+      setFeedbackError(null);
+    } catch (error) {
+      console.error(`Error submitting feedback for image ${index}:`, error);
+      setFeedbackError("Failed to submit image feedback. Please try again.");
+    }
+  };
+
 
   const handleImageGenerationSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -63,7 +130,8 @@ const EnhancedListingDisplay: React.FC<EnhancedListingDisplayProps> = ({
 
       setInternalIsGeneratingImages(true)
       try {
-        await onGenerateImages(imagePrompt, numImages)
+        // Standard text-to-image generation
+        await onGenerateImages(imagePrompt, numImages, undefined)
       } catch (error) {
         console.error("Image generation failed from display component", error)
       } finally {
@@ -86,9 +154,50 @@ const EnhancedListingDisplay: React.FC<EnhancedListingDisplayProps> = ({
     }
   }, [details.enhancedDescription])
 
+  const handleUseAsBasis = useCallback(
+    async (base64WithPrefix: string, promptForImage: string) => {
+      if (!selectedImageModel) {
+        alert("Please select an image generation model first.")
+        return
+      }
+      // Ensure the image prompt area is updated with the prompt of the source image
+      setImagePrompt(promptForImage)
+
+      // Extract pure base64 data
+      const sourceImageBase64 = base64WithPrefix.split(",")[1]
+      if (!sourceImageBase64) {
+        alert("Could not process source image data.")
+        return
+      }
+
+      let sourceImageOptions: SourceImageOptions = { // Use imported type
+        sourceImage: sourceImageBase64,
+      }
+
+      // Add imageStrength only if Stability AI is selected
+      const currentModelDetails = aiModels.image.find((m) => m.id === selectedImageModel.id)
+      if (currentModelDetails && currentModelDetails.provider === "Stability") {
+        sourceImageOptions.imageStrength = 0.7 // Default strength for Stability, can be made configurable
+      }
+      // For OpenAI (DALL-E 2 variations), imageStrength is not used.
+
+      setInternalIsGeneratingImages(true)
+      try {
+        // Call onGenerateImages with the source image options
+        await onGenerateImages(promptForImage, numImages, sourceImageOptions)
+      } catch (error) {
+        console.error("Image generation using source image failed:", error)
+        alert(`Failed to generate variations: ${error instanceof Error ? error.message : "Unknown error"}`)
+      } finally {
+        setInternalIsGeneratingImages(false)
+      }
+    },
+    [selectedImageModel, onGenerateImages, numImages, aiModels],
+  )
+
   const handleDownloadImage = (base64Image: string, index: number) => {
     const link = document.createElement("a")
-    link.href = `data:image/jpeg;base64,${base64Image}`
+    link.href = `data:image/jpeg;base64,${base64Image}` // Base64 already includes prefix here from map
     const safeProductName = details.name.replace(/[^a-z0-9]/gi, "_").toLowerCase() || "product"
     link.download = `${safeProductName}_ai_image_${index + 1}.jpeg`
     document.body.appendChild(link)
@@ -142,11 +251,27 @@ const EnhancedListingDisplay: React.FC<EnhancedListingDisplayProps> = ({
 
         <div className="space-y-4">
           <div className="bg-slate-700/50 p-4 rounded-lg shadow border border-purple-500 flex flex-col">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-lg font-semibold text-purple-400 flex items-center">
-                <SparklesIcon className="w-5 h-5 mr-2 text-purple-400" />
-                AI Enhanced Description:
-              </h3>
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <h3 className="text-lg font-semibold text-purple-400 flex items-center">
+                  <SparklesIcon className="w-5 h-5 mr-2 text-purple-400" />
+                  AI Enhanced Description:
+                </h3>
+                {(details.tone || details.style) && (
+                  <div className="text-xs text-purple-300/80 mt-1 ml-1">
+                    {details.tone && (
+                      <span className="mr-2">
+                        <strong>Tone:</strong> {details.tone}
+                      </span>
+                    )}
+                    {details.style && (
+                      <span>
+                        <strong>Style:</strong> {details.style}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
               <button
                 onClick={handleCopyDescription}
                 className={`p-2 rounded-md text-sm flex items-center transition-all duration-150 ${
@@ -176,7 +301,39 @@ const EnhancedListingDisplay: React.FC<EnhancedListingDisplayProps> = ({
               <span>|</span>
               <span>Words: {enhancedDescriptionCounts.wordCount}</span>
             </div>
+            {/* Description Feedback Buttons */}
+            {!descriptionFeedbackSubmitted ? (
+              <div className="mt-3 flex items-center justify-end space-x-2">
+                <span className="text-sm text-slate-400">Rate this description:</span>
+                <button
+                  onClick={() => handleDescriptionFeedback('good')}
+                  className="p-1.5 rounded-full hover:bg-green-500/20 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 focus:ring-offset-slate-800"
+                  aria-label="Good description"
+                  title="Good"
+                >
+                  <HandThumbUpIcon className="w-5 h-5 text-green-400" />
+                </button>
+                <button
+                  onClick={() => handleDescriptionFeedback('bad')}
+                  className="p-1.5 rounded-full hover:bg-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 focus:ring-offset-slate-800"
+                  aria-label="Bad description"
+                  title="Bad"
+                >
+                  <HandThumbDownIcon className="w-5 h-5 text-red-400" />
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-green-400 text-right">
+                Thanks for your feedback! ({descriptionFeedback})
+              </div>
+            )}
           </div>
+          
+          {feedbackError && (
+            <div className="my-2 p-3 bg-red-500/20 text-red-300 border border-red-500 rounded-md text-sm">
+              {feedbackError}
+            </div>
+          )}
 
           {details.generationContext && (
             <div className="bg-slate-700/60 p-4 rounded-lg shadow border border-sky-500">
@@ -298,16 +455,59 @@ const EnhancedListingDisplay: React.FC<EnhancedListingDisplayProps> = ({
               >
                 <img
                   src={`data:image/jpeg;base64,${base64Image}`}
-                  alt={`AI generated product image ${index + 1} based on prompt: ${details.generatedImagePrompts[details.generatedImagePrompts.length - details.generatedImages.length + index] || "current prompt"}`}
+                  alt={`AI generated product image ${index + 1} based on prompt: ${details.generatedImagePrompts[details.generatedImagePrompts.length - details.generatedImages.length + index] || initialImagePrompt}`}
                   className="object-cover w-full h-full"
                 />
-                <button
-                  onClick={() => handleDownloadImage(base64Image, index)}
-                  className="absolute bottom-2 right-2 bg-teal-600 hover:bg-teal-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-white"
-                  aria-label={`Download AI generated image ${index + 1}`}
-                >
-                  <ArrowDownTrayIcon className="w-5 h-5" />
-                </button>
+                <div className="absolute bottom-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all duration-200 ease-in-out">
+                  {/* Image Feedback Buttons */}
+                  {!imageFeedbackSubmitted[index] ? (
+                    <>
+                      <button
+                        onClick={() => handleImageFeedback(index, base64Image, 'good')}
+                        className="bg-green-600 hover:bg-green-700 text-white p-1.5 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-slate-800 focus:ring-white"
+                        aria-label={`Good image ${index + 1}`}
+                        title="Good Image"
+                      >
+                        <HandThumbUpIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleImageFeedback(index, base64Image, 'bad')}
+                        className="bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-slate-800 focus:ring-white"
+                        aria-label={`Bad image ${index + 1}`}
+                        title="Bad Image"
+                      >
+                        <HandThumbDownIcon className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : (
+                     <span className="text-xs p-1.5 bg-slate-900/70 text-white rounded-md">
+                       Rated {imageFeedback[index]}
+                     </span>
+                  )}
+                   <button
+                    onClick={() =>
+                      handleUseAsBasis(
+                        `data:image/jpeg;base64,${base64Image}`, // Pass with prefix
+                        details.generatedImagePrompts[
+                          details.generatedImagePrompts.length - details.generatedImages.length + index
+                        ] || initialImagePrompt, // Fallback to initial prompt
+                      )
+                    }
+                    className="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-slate-800 focus:ring-white"
+                    aria-label={`Use AI generated image ${index + 1} as basis`}
+                    title="Use as Basis"
+                  >
+                    <PencilSquareIcon className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDownloadImage(base64Image, index)}
+                    className="bg-teal-600 hover:bg-teal-700 text-white p-1.5 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-slate-800 focus:ring-white"
+                    aria-label={`Download AI generated image ${index + 1}`}
+                    title="Download Image"
+                  >
+                    <ArrowDownTrayIcon className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

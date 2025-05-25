@@ -1,10 +1,13 @@
 import { type AIModel, AIProvider, ModelType } from "../types/models"
+import { type SourceImageOptions } from "../types" // Import the common type
 
 // Text generation service - now only uses server-side endpoints
 export async function generateEnhancedDescription(
   model: AIModel,
   originalDescription: string,
   productName: string,
+  tone?: string,
+  style?: string,
 ): Promise<{ enhancedDescription: string; generationContext: string }> {
   if (model.type !== ModelType.Text) {
     throw new Error(`Model ${model.id} is not a text generation model`)
@@ -40,6 +43,8 @@ export async function generateEnhancedDescription(
       modelId: model.id,
       originalDescription,
       productName,
+      tone,
+      style,
     }),
   })
 
@@ -52,7 +57,12 @@ export async function generateEnhancedDescription(
 }
 
 // Image generation service - now only uses server-side endpoints
-export async function generateProductImages(model: AIModel, prompt: string, numberOfImages = 1): Promise<string[]> {
+export async function generateProductImages(
+  model: AIModel,
+  prompt: string,
+  numberOfImages = 1,
+  sourceImageOptions?: SourceImageOptions, // Use imported type
+): Promise<string[]> {
   if (model.type !== ModelType.Image) {
     throw new Error(`Model ${model.id} is not an image generation model`)
   }
@@ -87,6 +97,8 @@ export async function generateProductImages(model: AIModel, prompt: string, numb
       modelId: model.id,
       prompt,
       numberOfImages,
+      ...(sourceImageOptions?.sourceImage && { sourceImage: sourceImageOptions.sourceImage }),
+      ...(sourceImageOptions?.imageStrength !== undefined && { imageStrength: sourceImageOptions.imageStrength }),
     }),
   })
 

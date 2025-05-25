@@ -10,6 +10,8 @@ const ProductInputForm: React.FC<ProductInputFormProps> = ({ onSubmit }) => {
   const [name, setName] = useState('');
   const [originalDescription, setOriginalDescription] = useState('');
   const [imageUrls, setImageUrls] = useState<string[]>(['', '', '']);
+  const [tone, setTone] = useState('');
+  const [style, setStyle] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,7 +20,7 @@ const ProductInputForm: React.FC<ProductInputFormProps> = ({ onSubmit }) => {
         return;
     }
     const filteredImageUrls = imageUrls.map(url => url.trim()).filter(url => url !== '');
-    onSubmit({ name, originalDescription, originalImageUrls: filteredImageUrls });
+    onSubmit({ name, originalDescription, originalImageUrls: filteredImageUrls, tone, style });
   };
 
   const handleImageUrlChange = (index: number, value: string) => {
@@ -74,6 +76,42 @@ const ProductInputForm: React.FC<ProductInputFormProps> = ({ onSubmit }) => {
             <span>Characters: {descriptionCharCount}</span>
             <span>|</span>
             <span>Words: {descriptionWordCount}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label htmlFor="tone" className="block text-sm font-medium text-slate-300 mb-1">
+            Tone of Voice
+          </label>
+          <select
+            id="tone"
+            value={tone}
+            onChange={(e) => setTone(e.target.value)}
+            className="mt-1 block w-full pl-3 pr-10 py-3 text-base border-slate-600 bg-slate-700 text-slate-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+          >
+            <option value="">Default (Professional)</option>
+            <option value="Friendly">Friendly</option>
+            <option value="Persuasive">Persuasive</option>
+            <option value="Witty">Witty</option>
+            <option value="Informative">Informative</option>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="style" className="block text-sm font-medium text-slate-300 mb-1">
+            Description Style
+          </label>
+          <select
+            id="style"
+            value={style}
+            onChange={(e) => setStyle(e.target.value)}
+            className="mt-1 block w-full pl-3 pr-10 py-3 text-base border-slate-600 bg-slate-700 text-slate-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+          >
+            <option value="">Default (Paragraph)</option>
+            <option value="Bullet Points">Bullet Points</option>
+            <option value="Short Sentences">Short Sentences</option>
+          </select>
         </div>
       </div>
 

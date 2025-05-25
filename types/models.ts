@@ -18,6 +18,8 @@ export enum AIProvider {
   Stability = "stability",
   Replicate = "replicate",
   OpenRouter = "openrouter",
+  Groq = "groq",
+  XAI = "xai",
 }
 
 export enum ModelType {
@@ -75,6 +77,22 @@ export const AI_PROVIDERS: Record<AIProvider, AIProviderConfig> = {
     docsUrl: "https://openrouter.ai/docs",
     apiKeyName: "OpenRouter API Key",
     apiKeyPlaceholder: "sk-or-v1-...",
+  },
+  [AIProvider.Groq]: {
+    id: AIProvider.Groq,
+    name: "Groq",
+    description: "Ultra-fast AI inference with open-source models",
+    docsUrl: "https://console.groq.com/docs",
+    apiKeyName: "Groq API Key",
+    apiKeyPlaceholder: "gsk_...",
+  },
+  [AIProvider.XAI]: {
+    id: AIProvider.XAI,
+    name: "Grok (xAI)",
+    description: "Elon Musk's xAI Grok models for text generation",
+    docsUrl: "https://docs.x.ai/",
+    apiKeyName: "xAI API Key",
+    apiKeyPlaceholder: "xai-...",
   },
 }
 
@@ -167,9 +185,9 @@ export const AI_MODELS: AIModel[] = [
     type: ModelType.Image,
     description: "Google's advanced image generation model",
     capabilities: ["High-quality images", "Photorealistic outputs", "Strong prompt following"],
-    isAvailable: false,
+    isAvailable: true,
     apiKeyRequired: true,
-    defaultModel: false,
+    defaultModel: true,
   },
 
   // Image Models - Stability AI
@@ -307,6 +325,49 @@ export const AI_MODELS: AIModel[] = [
     type: ModelType.Image,
     description: "Fast version of SDXL, accessed through OpenRouter",
     capabilities: ["Fast generation", "Good quality", "Efficient processing"],
+    isAvailable: true,
+    apiKeyRequired: true,
+  },
+  // Text Models - Groq
+  {
+    id: "llama-3.1-70b-versatile",
+    name: "Llama 3.1 70B Versatile",
+    provider: AIProvider.Groq,
+    type: ModelType.Text,
+    description: "Meta's Llama 3.1 70B model optimized for speed on Groq",
+    capabilities: ["Ultra-fast inference", "High-quality text generation", "Versatile applications"],
+    isAvailable: true,
+    apiKeyRequired: true,
+  },
+  {
+    id: "llama-3.1-8b-instant",
+    name: "Llama 3.1 8B Instant",
+    provider: AIProvider.Groq,
+    type: ModelType.Text,
+    description: "Lightweight Llama model for instant responses",
+    capabilities: ["Instant responses", "Cost-effective", "Good for simple tasks"],
+    isAvailable: true,
+    apiKeyRequired: true,
+  },
+  {
+    id: "mixtral-8x7b-32768",
+    name: "Mixtral 8x7B",
+    provider: AIProvider.Groq,
+    type: ModelType.Text,
+    description: "Mistral's mixture of experts model on Groq",
+    capabilities: ["Fast inference", "High-quality outputs", "Large context window"],
+    isAvailable: true,
+    apiKeyRequired: true,
+  },
+
+  // Text Models - XAI (Grok)
+  {
+    id: "grok-beta",
+    name: "Grok Beta",
+    provider: AIProvider.XAI,
+    type: ModelType.Text,
+    description: "xAI's Grok model with real-time knowledge and wit",
+    capabilities: ["Real-time information", "Witty responses", "Current events awareness"],
     isAvailable: true,
     apiKeyRequired: true,
   },

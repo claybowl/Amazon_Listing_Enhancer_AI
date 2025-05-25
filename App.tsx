@@ -8,7 +8,6 @@ import ProductInputForm from "./components/ProductInputForm"
 import EnhancedListingDisplay from "./components/EnhancedListingDisplay"
 import LoadingSpinner from "./components/LoadingSpinner"
 import AISettings from "./components/AISettings"
-import GeminiWarning from "./components/GeminiWarning"
 import { useAI } from "./contexts/AIContext"
 import { generateEnhancedDescription, generateProductImages } from "./services/aiService"
 import { SparklesIcon, ArrowPathIcon } from "./components/icons"
@@ -124,8 +123,6 @@ const AppContent: React.FC = () => {
 
       <main className="w-full max-w-4xl bg-slate-800 shadow-2xl rounded-xl p-6 sm:p-8">
         <AISettings />
-
-        <GeminiWarning />
 
         {error && (
           <div className="mb-6 p-4 bg-red-500/20 text-red-300 border border-red-500 rounded-lg" role="alert">

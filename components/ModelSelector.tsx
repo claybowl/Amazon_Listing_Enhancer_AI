@@ -1,63 +1,87 @@
 "use client"
 
 import type React from "react"
-import { type AIModel, ModelType, getModelsByType } from "../types/models"
+import { ModelType, getModelsByType } from "../types/models"
 import { useAI } from "../contexts/AIContext"
 import { ChevronDownIcon } from "./icons"
 
 interface ModelSelectorProps {
   modelType: ModelType
-  onChange?: (model: AIModel) => void
 }
 
-const ModelSelector: React.FC<ModelSelectorProps> = ({ modelType, onChange }) => {
-  const { selectedTextModel, selectedImageModel, setSelectedTextModel, setSelectedImageModel, hasApiKey } = useAI()
+const ModelSelector: React.FC<ModelSelectorProps> = ({ modelType }) => {
+  const { selectedTextModel, selectedImageModel, setSelectedTextModel, setSelectedImageModel, serverApiKeys } = useAI()
 
+  const models = getModelsByType(modelType)
   const selectedModel = modelType === ModelType.Text ? selectedTextModel : selectedImageModel
   const setSelectedModel = modelType === ModelType.Text ? setSelectedTextModel : setSelectedImageModel
 
-  const availableModels = getModelsByType(modelType)
+  // Filter models to only show those with available server API keys
+  const availableModels = models.filter((model) => serverApiKeys[model.provider])
 
-  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const modelId = e.target.value
-    const model = availableModels.find((m) => m.id === modelId)
-
-    if (model) {
-      setSelectedModel(model)
-      if (onChange) onChange(model)
-    }
+  if (availableModels.length === 0) {
+    return (
+      <div className="mb-4 p-4 bg-yellow-900/30 border border-yellow-500/30 rounded-lg">
+        <div className="flex items-center">
+          <svg className="w-5 h-5 text-yellow-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+            <path
+              fillRule="evenodd"
+              d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <div>
+            <p className="text-yellow-400 text-sm font-medium">No {modelType.toLowerCase()} models available</p>
+            <p className="text-yellow-300 text-xs mt-1">Configure API keys on the server to enable models.</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="mb-4">
-      <label htmlFor={`${modelType}-model-selector`} className="block text-sm font-medium text-slate-300 mb-1">
-        {modelType === ModelType.Text ? "Text Generation Model" : "Image Generation Model"}:
+      <label className="block text-sm font-medium text-slate-300 mb-2">
+        {modelType === ModelType.Text ? "Text Generation Model" : "Image Generation Model"}
       </label>
       <div className="relative">
         <select
-          id={`${modelType}-model-selector`}
           value={selectedModel?.id || ""}
-          onChange={handleModelChange}
-          className="appearance-none focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-slate-600 bg-slate-700 text-slate-100 rounded-md p-3 pr-8"
+          onChange={(e) => {
+            const model = availableModels.find((m) => m.id === e.target.value)
+            if (model) {
+              setSelectedModel(model)
+            }
+          }}
+          className="w-full p-3 bg-slate-800 border border-slate-600 rounded-md text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none pr-10"
         >
+          <option value="">Select a model...</option>
           {availableModels.map((model) => (
-            <option key={model.id} value={model.id} disabled={model.apiKeyRequired && !hasApiKey(model.provider)}>
+            <option key={model.id} value={model.id}>
               {model.name} ({model.provider})
-              {model.apiKeyRequired && !hasApiKey(model.provider) ? " - API Key Required" : ""}
             </option>
           ))}
         </select>
-        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
           <ChevronDownIcon className="w-5 h-5" />
         </div>
       </div>
 
       {selectedModel && (
-        <div className="mt-2 text-xs text-slate-400">
-          <p>{selectedModel.description}</p>
-          <div className="mt-1">
-            <span className="font-semibold">Capabilities: </span>
-            {selectedModel.capabilities.join(", ")}
+        <div className="mt-3 p-3 bg-slate-800/50 rounded-lg border border-slate-600/50">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div>
+              <span className="font-semibold text-slate-300">Provider:</span>
+              <p className="text-slate-400 mt-1">{selectedModel.provider}</p>
+            </div>
+            <div>
+              <span className="font-semibold text-slate-300">Capabilities:</span>
+              <p className="text-slate-400 mt-1">{selectedModel.capabilities.join(", ")}</p>
+            </div>
+          </div>
+          <div className="mt-2">
+            <span className="font-semibold text-slate-300 text-xs">Description:</span>
+            <p className="text-slate-400 text-xs mt-1">{selectedModel.description}</p>
           </div>
         </div>
       )}

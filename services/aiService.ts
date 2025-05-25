@@ -1,112 +1,100 @@
 import { type AIModel, AIProvider, ModelType } from "../types/models"
-import { openAITextGeneration, openAIImageGeneration } from "./providers/openaiService"
-import { geminiTextGeneration, geminiImageGeneration } from "./providers/geminiService"
-import { stabilityImageGeneration } from "./providers/stabilityService"
-import { replicateImageGeneration } from "./providers/replicateService"
-import { openRouterTextGeneration, openRouterImageGeneration } from "./providers/openrouterService"
 
-// Text generation service
+// Text generation service - now only uses server-side endpoints
 export async function generateEnhancedDescription(
   model: AIModel,
   originalDescription: string,
   productName: string,
-  apiKey?: string,
 ): Promise<{ enhancedDescription: string; generationContext: string }> {
   if (model.type !== ModelType.Text) {
     throw new Error(`Model ${model.id} is not a text generation model`)
   }
 
+  let endpoint: string
   switch (model.provider) {
     case AIProvider.OpenAI:
-      return await openAITextGeneration(model.id, originalDescription, productName, apiKey)
+      endpoint = "/api/openai/enhance-description"
+      break
     case AIProvider.Gemini:
-      return await geminiTextGeneration(model.id, originalDescription, productName, apiKey)
+      endpoint = "/api/gemini/enhance-description"
+      break
     case AIProvider.OpenRouter:
-      return await openRouterTextGeneration(model.id, originalDescription, productName, apiKey)
+      endpoint = "/api/openrouter/enhance-description"
+      break
+    case AIProvider.Groq:
+      endpoint = "/api/groq/enhance-description"
+      break
+    case AIProvider.XAI:
+      endpoint = "/api/xai/enhance-description"
+      break
     default:
       throw new Error(`Provider ${model.provider} is not supported for text generation`)
   }
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      modelId: model.id,
+      originalDescription,
+      productName,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
+    throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  return await response.json()
 }
 
-// Image generation service
-export async function generateProductImages(
-  model: AIModel,
-  prompt: string,
-  numberOfImages = 1,
-  apiKey?: string,
-): Promise<string[]> {
+// Image generation service - now only uses server-side endpoints
+export async function generateProductImages(model: AIModel, prompt: string, numberOfImages = 1): Promise<string[]> {
   if (model.type !== ModelType.Image) {
     throw new Error(`Model ${model.id} is not an image generation model`)
   }
 
+  let endpoint: string
   switch (model.provider) {
     case AIProvider.OpenAI:
-      return await openAIImageGeneration(model.id, prompt, numberOfImages, apiKey)
+      endpoint = "/api/openai/generate-images"
+      break
     case AIProvider.Gemini:
-      return await geminiImageGeneration(model.id, prompt, numberOfImages, apiKey)
+      endpoint = "/api/gemini/generate-images"
+      break
     case AIProvider.Stability:
-      return await stabilityImageGeneration(model.id, prompt, numberOfImages, apiKey)
+      endpoint = "/api/stability/generate-images"
+      break
     case AIProvider.Replicate:
-      return await replicateImageGeneration(model.id, prompt, numberOfImages, apiKey)
+      endpoint = "/api/replicate/generate-images"
+      break
     case AIProvider.OpenRouter:
-      return await openRouterImageGeneration(model.id, prompt, numberOfImages, apiKey)
+      endpoint = "/api/openrouter/generate-images"
+      break
     default:
       throw new Error(`Provider ${model.provider} is not supported for image generation`)
   }
-}
 
-// Check if API key is valid
-export async function checkApiKey(provider: AIProvider, apiKey: string): Promise<boolean> {
-  try {
-    switch (provider) {
-      case AIProvider.OpenAI:
-        // Make a minimal API call to check if the key is valid
-        const openaiResponse = await fetch("https://api.openai.com/v1/models", {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-          },
-        })
-        return openaiResponse.ok
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      modelId: model.id,
+      prompt,
+      numberOfImages,
+    }),
+  })
 
-      case AIProvider.Gemini:
-        // For Gemini, we'll make a minimal API call
-        const geminiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/models?key=" + apiKey)
-        return geminiResponse.ok
-
-      case AIProvider.Stability:
-        // For Stability AI
-        const stabilityResponse = await fetch("https://api.stability.ai/v1/engines/list", {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-          },
-        })
-        return stabilityResponse.ok
-
-      case AIProvider.Replicate:
-        // For Replicate
-        const replicateResponse = await fetch("https://api.replicate.com/v1/models", {
-          headers: {
-            Authorization: `Token ${apiKey}`,
-          },
-        })
-        return replicateResponse.ok
-
-      case AIProvider.OpenRouter:
-        // For OpenRouter
-        const openRouterResponse = await fetch("https://openrouter.ai/api/v1/models", {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "HTTP-Referer": window.location.origin,
-            "X-Title": "Amazon Listing Enhancer AI",
-          },
-        })
-        return openRouterResponse.ok
-
-      default:
-        return false
-    }
-  } catch (error) {
-    console.error(`Error checking API key for ${provider}:`, error)
-    return false
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
+    throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
   }
+
+  const data = await response.json()
+  return data.images || []
 }

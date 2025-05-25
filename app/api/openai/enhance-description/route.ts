@@ -1,7 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
+import OpenAI from "openai"
 
 // Get API key from environment variables
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+
+// Initialize the OpenAI client
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null
 
 export async function HEAD(request: NextRequest) {
   // Simple HEAD request handler to check if the route exists
@@ -10,11 +14,8 @@ export async function HEAD(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("OpenAI enhance-description API route called")
-
     // Check if API key is configured
-    if (!OPENAI_API_KEY) {
-      console.log("OpenAI API Key not configured on the server")
+    if (!OPENAI_API_KEY || !openai) {
       return NextResponse.json({ error: "OpenAI API Key not configured on the server." }, { status: 500 })
     }
 
@@ -23,21 +24,17 @@ export async function POST(request: NextRequest) {
     try {
       body = await request.json()
     } catch (e) {
-      console.error("Failed to parse request body:", e)
       return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 })
     }
 
-    const { originalDescription, productName, modelId = "gpt-4o" } = body
+    const { originalDescription, productName } = body
 
     if (!originalDescription || !productName) {
-      console.log("Missing required fields in request")
       return NextResponse.json(
         { error: "Missing required fields: originalDescription or productName" },
         { status: 400 },
       )
     }
-
-    console.log(`Processing request for product: ${productName}`)
 
     const originalCharCount = originalDescription.length
     const originalWordCount = originalDescription.trim().split(/\s+/).filter(Boolean).length
@@ -74,106 +71,54 @@ Output ONLY a valid JSON object with the following exact schema:
 
 Do NOT include any other text, explanations, or markdown formatting outside of this JSON object. Just the JSON.`
 
-    try {
-      console.log("Calling OpenAI API using fetch...")
-
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: modelId,
-          messages: [
-            {
-              role: "system",
-              content: "You are an expert Amazon listing copywriter that outputs only valid JSON.",
-            },
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-          response_format: { type: "json_object" },
-          max_tokens: 2000,
-          temperature: 0.7,
-        }),
-      })
-
-      console.log("OpenAI API response status:", response.status)
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error("OpenAI API error response:", errorData)
-
-        if (response.status === 401) {
-          return NextResponse.json({ error: "Invalid OpenAI API key" }, { status: 401 })
-        }
-
-        if (response.status === 429) {
-          return NextResponse.json({ error: "OpenAI rate limit exceeded. Please try again later." }, { status: 429 })
-        }
-
-        return NextResponse.json(
-          { error: errorData.error?.message || "OpenAI API request failed" },
-          { status: response.status },
-        )
-      }
-
-      const data = await response.json()
-      console.log("OpenAI API response received successfully")
-
-      const content = data.choices?.[0]?.message?.content
-
-      if (!content) {
-        console.error("No content returned from OpenAI")
-        return NextResponse.json({ error: "No content returned from OpenAI" }, { status: 500 })
-      }
-
-      console.log("Parsing OpenAI response content")
-      let parsedData
-      try {
-        parsedData = JSON.parse(content)
-      } catch (e) {
-        console.error("Failed to parse JSON response:", content, e)
-        return NextResponse.json(
-          { error: "Failed to parse AI response as JSON. The response may not be in the expected format." },
-          { status: 500 },
-        )
-      }
-
-      if (!parsedData.enhanced_description || typeof parsedData.generation_context === "undefined") {
-        console.error("Parsed JSON is missing required fields:", parsedData)
-        return NextResponse.json(
-          { error: "AI response JSON is missing 'enhanced_description' or 'generation_context'." },
-          { status: 500 },
-        )
-      }
-
-      console.log("Successfully processed OpenAI response")
-      return NextResponse.json({
-        enhancedDescription: parsedData.enhanced_description.trim(),
-        generationContext: parsedData.generation_context.trim(),
-      })
-    } catch (fetchError: any) {
-      console.error("Error calling OpenAI API:", fetchError)
-      console.error("Error details:", fetchError.message, fetchError.stack)
-
-      return NextResponse.json(
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
         {
-          error: `Failed to call OpenAI API: ${fetchError.message || "Unknown error"}`,
+          role: "system",
+          content: "You are an expert Amazon listing copywriter that outputs only valid JSON.",
         },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      response_format: { type: "json_object" },
+    })
+
+    const content = response.choices[0]?.message?.content
+
+    if (!content) {
+      return NextResponse.json({ error: "No content returned from OpenAI" }, { status: 500 })
+    }
+
+    let parsedData
+    try {
+      parsedData = JSON.parse(content)
+    } catch (e) {
+      console.error("Failed to parse JSON response:", content, e)
+      return NextResponse.json(
+        { error: "Failed to parse AI response as JSON. The response may not be in the expected format." },
         { status: 500 },
       )
     }
-  } catch (error: any) {
-    console.error("Unexpected error in OpenAI enhance-description API route:", error)
-    console.error("Error stack:", error.stack)
 
-    // Ensure we always return a JSON response
+    if (!parsedData.enhanced_description || typeof parsedData.generation_context === "undefined") {
+      console.error("Parsed JSON is missing required fields:", parsedData)
+      return NextResponse.json(
+        { error: "AI response JSON is missing 'enhanced_description' or 'generation_context'." },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({
+      enhancedDescription: parsedData.enhanced_description.trim(),
+      generationContext: parsedData.generation_context.trim(),
+    })
+  } catch (error) {
+    console.error("Error in OpenAI enhance-description API route:", error)
     return NextResponse.json(
-      { error: `Server error: ${error.message || "An unknown error occurred"}` },
+      { error: error instanceof Error ? error.message : "An unknown error occurred" },
       { status: 500 },
     )
   }

@@ -1,24 +1,22 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { GoogleGenAI } from "@google/genai"
 
 // Get API key from environment variables
 const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY
 
+// Initialize the Google Generative AI client
+const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null
+const TEXT_MODEL_NAME = "gemini-2.5-flash-preview-04-17"
+
 export async function POST(request: NextRequest) {
   try {
     // Check if API key is configured
-    if (!API_KEY) {
-      return NextResponse.json({ error: "API Key not configured on the server." }, { status: 500 })
+    if (!API_KEY || !ai) {
+      return NextResponse.json({ error: "Gemini API Key not configured on the server." }, { status: 500 })
     }
 
     // Parse request body
-    let body
-    try {
-      body = await request.json()
-    } catch (e) {
-      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 })
-    }
-
-    const { originalDescription, productName } = body
+    const { originalDescription, productName } = await request.json()
 
     if (!originalDescription || !productName) {
       return NextResponse.json(
@@ -27,11 +25,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    try {
-      const originalCharCount = originalDescription.length
-      const originalWordCount = originalDescription.trim().split(/\s+/).filter(Boolean).length
+    const originalCharCount = originalDescription.length
+    const originalWordCount = originalDescription.trim().split(/\s+/).filter(Boolean).length
 
-      const prompt = `You are an expert Amazon listing copywriter.
+    const prompt = `You are an expert Amazon listing copywriter.
 Your task is to rewrite the provided product description for "${productName}" and provide context for your changes.
 
 Original Product Name: "${productName}"
@@ -63,85 +60,51 @@ Output ONLY a valid JSON object with the following exact schema:
 
 Do NOT include any other text, explanations, or markdown formatting outside of this JSON object. Just the JSON.`
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: prompt,
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.6,
-              topP: 0.95,
-              topK: 40,
-              maxOutputTokens: 1024,
-              responseMimeType: "application/json",
-            },
-          }),
-        },
-      )
+    const response = await ai.models.generateContent({
+      model: TEXT_MODEL_NAME,
+      contents: prompt,
+      config: {
+        temperature: 0.6,
+        topP: 0.95,
+        topK: 40,
+        responseMimeType: "application/json",
+      },
+    })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        return NextResponse.json(
-          { error: errorData.error?.message || "API request failed" },
-          { status: response.status },
-        )
-      }
+    let jsonStr = response.text.trim()
+    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s
+    const match = jsonStr.match(fenceRegex)
+    if (match && match[2]) {
+      jsonStr = match[2].trim()
+    }
 
-      const data = await response.json()
-      const content = data.candidates?.[0]?.content?.parts?.[0]?.text
-
-      if (!content) {
-        return NextResponse.json({ error: "No content returned from API" }, { status: 500 })
-      }
-
-      let parsedData
-      try {
-        parsedData = JSON.parse(content)
-      } catch (e) {
-        console.error("Failed to parse JSON response:", content, e)
-        return NextResponse.json(
-          { error: "Failed to parse AI response as JSON. The response may not be in the expected format." },
-          { status: 500 },
-        )
-      }
-
-      if (!parsedData.enhanced_description || typeof parsedData.generation_context === "undefined") {
-        console.error("Parsed JSON is missing required fields:", parsedData)
-        return NextResponse.json(
-          { error: "AI response JSON is missing 'enhanced_description' or 'generation_context'." },
-          { status: 500 },
-        )
-      }
-
-      return NextResponse.json({
-        enhancedDescription: parsedData.enhanced_description.trim(),
-        generationContext: parsedData.generation_context.trim(),
-      })
-    } catch (apiError: any) {
-      console.error("API error:", apiError)
+    let parsedData
+    try {
+      parsedData = JSON.parse(jsonStr)
+    } catch (e) {
+      console.error("Failed to parse JSON response:", jsonStr, e)
       return NextResponse.json(
-        {
-          error: `API error: ${apiError.message || "Unknown error from API"}`,
-        },
+        { error: "Failed to parse AI response as JSON. The response may not be in the expected format." },
         { status: 500 },
       )
     }
-  } catch (error: any) {
+
+    if (!parsedData.enhanced_description || typeof parsedData.generation_context === "undefined") {
+      console.error("Parsed JSON is missing required fields:", parsedData)
+      return NextResponse.json(
+        { error: "AI response JSON is missing 'enhanced_description' or 'generation_context'." },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({
+      enhancedDescription: parsedData.enhanced_description.trim(),
+      generationContext: parsedData.generation_context.trim(),
+    })
+  } catch (error) {
     console.error("Error in enhance-description API route:", error)
     return NextResponse.json(
-      { error: `Server error: ${error.message || "An unknown error occurred"}` },
+      { error: error instanceof Error ? error.message : "An unknown error occurred" },
       { status: 500 },
     )
   }

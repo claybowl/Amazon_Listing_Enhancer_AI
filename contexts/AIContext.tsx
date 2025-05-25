@@ -4,35 +4,21 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from "
 import { type AIModel, AIProvider, ModelType, getDefaultModel, getModelById } from "../types/models"
 
 interface AIContextType {
-  // API Keys
-  apiKeys: Record<AIProvider, string>
-  setApiKey: (provider: AIProvider, key: string) => void
-  hasApiKey: (provider: AIProvider) => boolean
-  clearApiKey: (provider: AIProvider) => void
-
   // Selected Models
   selectedTextModel: AIModel | null
   selectedImageModel: AIModel | null
   setSelectedTextModel: (model: AIModel) => void
   setSelectedImageModel: (model: AIModel) => void
 
-  // Server API Keys
+  // Server API Keys Status
   serverApiKeys: Record<AIProvider, boolean>
   isCheckingServerKeys: boolean
+  refreshServerKeys: () => Promise<void>
 }
 
 const AIContext = createContext<AIContextType | undefined>(undefined)
 
 export function AIContextProvider({ children }: { children: ReactNode }) {
-  // API Keys state
-  const [apiKeys, setApiKeys] = useState<Record<AIProvider, string>>({
-    [AIProvider.OpenAI]: "",
-    [AIProvider.Gemini]: "",
-    [AIProvider.Stability]: "",
-    [AIProvider.Replicate]: "",
-    [AIProvider.OpenRouter]: "",
-  })
-
   // Selected Models state
   const [selectedTextModel, setSelectedTextModel] = useState<AIModel | null>(null)
   const [selectedImageModel, setSelectedImageModel] = useState<AIModel | null>(null)
@@ -44,112 +30,70 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
     [AIProvider.Stability]: false,
     [AIProvider.Replicate]: false,
     [AIProvider.OpenRouter]: false,
+    [AIProvider.Groq]: false,
+    [AIProvider.XAI]: false,
   })
   const [isCheckingServerKeys, setIsCheckingServerKeys] = useState(true)
-
-  // Load API keys from localStorage on mount
-  useEffect(() => {
-    const loadApiKeys = () => {
-      const keys: Record<AIProvider, string> = {
-        [AIProvider.OpenAI]: localStorage.getItem(`${AIProvider.OpenAI}_api_key`) || "",
-        [AIProvider.Gemini]: localStorage.getItem(`${AIProvider.Gemini}_api_key`) || "",
-        [AIProvider.Stability]: localStorage.getItem(`${AIProvider.Stability}_api_key`) || "",
-        [AIProvider.Replicate]: localStorage.getItem(`${AIProvider.Replicate}_api_key`) || "",
-        [AIProvider.OpenRouter]: localStorage.getItem(`${AIProvider.OpenRouter}_api_key`) || "",
-      }
-
-      // Set the OpenRouter API key provided by the user if not already set
-      if (!keys[AIProvider.OpenRouter]) {
-        keys[AIProvider.OpenRouter] = "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"
-        localStorage.setItem(`${AIProvider.OpenRouter}_api_key`, keys[AIProvider.OpenRouter])
-      }
-
-      setApiKeys(keys)
-    }
-
-    loadApiKeys()
-
-    // Set default models - prefer OpenAI over Gemini due to issues
-    const openaiTextModel = getModelById("gpt-4o")
-    const openaiImageModel = getModelById("dall-e-3")
-
-    if (openaiTextModel) {
-      setSelectedTextModel(openaiTextModel)
-    } else {
-      const defaultTextModel = getDefaultModel(ModelType.Text)
-      if (defaultTextModel) setSelectedTextModel(defaultTextModel)
-    }
-
-    if (openaiImageModel) {
-      setSelectedImageModel(openaiImageModel)
-    } else {
-      const defaultImageModel = getDefaultModel(ModelType.Image)
-      if (defaultImageModel) setSelectedImageModel(defaultImageModel)
-    }
-
-    // Check for server API keys
-    checkServerApiKeys()
-  }, [])
 
   // Check if server has API keys configured
   const checkServerApiKeys = async () => {
     setIsCheckingServerKeys(true)
 
     try {
-      // Check OpenAI API key
-      const openaiResponse = await fetch("/api/check-api-key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: AIProvider.OpenAI }),
-      })
+      const providers = Object.values(AIProvider)
+      const responses = await Promise.all(
+        providers.map(async (provider) => {
+          try {
+            const response = await fetch("/api/check-api-key", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ provider }),
+            })
+            const data = await response.json()
+            return { provider, hasApiKey: data.hasApiKey }
+          } catch (error) {
+            console.error(`Error checking ${provider} API key:`, error)
+            return { provider, hasApiKey: false }
+          }
+        }),
+      )
 
-      const openaiData = await openaiResponse.json()
+      const newServerApiKeys = responses.reduce(
+        (acc, { provider, hasApiKey }) => {
+          acc[provider] = hasApiKey
+          return acc
+        },
+        {} as Record<AIProvider, boolean>,
+      )
 
-      // Check Gemini API key
-      const geminiResponse = await fetch("/api/check-api-key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: AIProvider.Gemini }),
-      })
+      setServerApiKeys(newServerApiKeys)
 
-      const geminiData = await geminiResponse.json()
+      // Auto-select best available models based on server configuration
+      if (!selectedTextModel) {
+        const availableTextModels = [
+          getModelById("gpt-4o"), // OpenAI GPT-4o
+          getModelById("llama-3.1-70b-versatile"), // Groq Llama
+          getModelById("gemini-1.5-pro"), // Gemini Pro
+          getDefaultModel(ModelType.Text), // Fallback
+        ].filter((model) => model && newServerApiKeys[model.provider])
 
-      // Check Replicate API key
-      const replicateResponse = await fetch("/api/check-api-key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: AIProvider.Replicate }),
-      })
+        if (availableTextModels[0]) {
+          setSelectedTextModel(availableTextModels[0])
+        }
+      }
 
-      const replicateData = await replicateResponse.json()
+      if (!selectedImageModel) {
+        const availableImageModels = [
+          getModelById("dall-e-3"), // OpenAI DALL-E 3
+          getModelById("stable-diffusion-xl"), // Stability AI
+          getModelById("imagen-3"), // Gemini Imagen
+          getDefaultModel(ModelType.Image), // Fallback
+        ].filter((model) => model && newServerApiKeys[model.provider])
 
-      // Check OpenRouter API key
-      const openRouterResponse = await fetch("/api/check-api-key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: AIProvider.OpenRouter }),
-      })
-
-      const openRouterData = await openRouterResponse.json()
-
-      // Check Stability API key
-      const stabilityResponse = await fetch("/api/check-api-key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: AIProvider.Stability }),
-      })
-
-      const stabilityData = await stabilityResponse.json()
-
-      // Update server API keys state
-      setServerApiKeys({
-        ...serverApiKeys,
-        [AIProvider.OpenAI]: openaiData.hasApiKey,
-        [AIProvider.Gemini]: geminiData.hasApiKey,
-        [AIProvider.OpenRouter]: openRouterData.hasApiKey,
-        [AIProvider.Replicate]: replicateData.hasApiKey,
-        [AIProvider.Stability]: stabilityData.hasApiKey,
-      })
+        if (availableImageModels[0]) {
+          setSelectedImageModel(availableImageModels[0])
+        }
+      }
     } catch (error) {
       console.error("Error checking server API keys:", error)
     } finally {
@@ -157,34 +101,19 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Set API key
-  const setApiKey = (provider: AIProvider, key: string) => {
-    setApiKeys((prev) => ({ ...prev, [provider]: key }))
-    localStorage.setItem(`${provider}_api_key`, key)
-  }
-
-  // Check if API key exists
-  const hasApiKey = (provider: AIProvider): boolean => {
-    return serverApiKeys[provider] || !!apiKeys[provider]
-  }
-
-  // Clear API key
-  const clearApiKey = (provider: AIProvider) => {
-    setApiKeys((prev) => ({ ...prev, [provider]: "" }))
-    localStorage.removeItem(`${provider}_api_key`)
-  }
+  // Load default models and check server keys on mount
+  useEffect(() => {
+    checkServerApiKeys()
+  }, [])
 
   const value = {
-    apiKeys,
-    setApiKey,
-    hasApiKey,
-    clearApiKey,
     selectedTextModel,
     selectedImageModel,
     setSelectedTextModel,
     setSelectedImageModel,
     serverApiKeys,
     isCheckingServerKeys,
+    refreshServerKeys: checkServerApiKeys,
   }
 
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>

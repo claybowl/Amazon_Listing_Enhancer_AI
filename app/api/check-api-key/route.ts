@@ -30,16 +30,22 @@ export async function POST(request: NextRequest) {
         hasApiKey = !!process.env.OPENAI_API_KEY
         break
       case AIProvider.Gemini:
-        hasApiKey = !!process.env.GEMINI_API_KEY
+        hasApiKey = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEN_AI_API_KEY)
         break
       case AIProvider.Stability:
         hasApiKey = !!process.env.STABILITY_API_KEY
         break
       case AIProvider.Replicate:
-        hasApiKey = !!(process.env.REPLICATE_API_KEY || "r8_0HPEdTSBtwh0fJUGVNHD5v1bh4e7DoH2KdX4S")
+        hasApiKey = !!process.env.REPLICATE_API_KEY
         break
       case AIProvider.OpenRouter:
         hasApiKey = !!process.env.OPENROUTER_API_KEY
+        break
+      case AIProvider.Groq:
+        hasApiKey = !!process.env.GROQ_API_KEY
+        break
+      case AIProvider.XAI:
+        hasApiKey = !!process.env.XAI_API_KEY
         break
       default:
         hasApiKey = false

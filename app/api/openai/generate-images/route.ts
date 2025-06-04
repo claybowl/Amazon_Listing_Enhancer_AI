@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 })
     }
 
-    const { prompt, numberOfImages = 1, sourceImage, modelId = "dall-e-3" } = body
+    const { prompt, numberOfImages = 1, sourceImage, modelId = "dall-e-3", aspectRatio = "1:1", style = "natural", quality = "standard" } = body
 
     if (!prompt && !sourceImage) {
       return NextResponse.json({ error: "Missing required field: prompt or sourceImage" }, { status: 400 })
@@ -47,7 +47,9 @@ export async function POST(request: NextRequest) {
       const formData = new FormData()
       formData.append("image", new Blob([imageBuffer], { type: "image/png" }), "image.png")
       formData.append("n", numberOfImages.toString())
-      formData.append("size", "1024x1024")
+      // Map aspectRatio to size for variations
+      const size = aspectRatio === "16:9" ? "1792x1024" : aspectRatio === "9:16" ? "1024x1792" : "1024x1024"
+      formData.append("size", size)
       formData.append("response_format", "b64_json")
 
       const response = await fetch("https://api.openai.com/v1/images/variations", {
@@ -92,6 +94,11 @@ While the product depiction MUST remain true to the "Product Context", the surro
 **Key Rule: Do not change the product's described features. Only change the scene, background, and styling around the product.**
 Generate an image that makes this specific product look highly desirable in its new fashionable environment.`
 
+      // Map aspectRatio and quality for DALL-E 3
+      const dalleSize = aspectRatio === "16:9" ? "1792x1024" : aspectRatio === "9:16" ? "1024x1792" : "1024x1024"
+      const dalleQuality = quality === "hd" ? "hd" : "standard"
+      const dalleStyle = style === "vivid" ? "vivid" : "natural"
+
       // DALL-E 3 only supports n=1, so we loop if numberOfImages > 1
       const imagePromises = []
       for (let i = 0; i < numberOfImages; i++) {
@@ -106,7 +113,9 @@ Generate an image that makes this specific product look highly desirable in its 
               model: modelId,
               prompt: fullPrompt,
               n: 1, // Always 1 for DALL-E 3
-              size: "1024x1024",
+              size: dalleSize,
+              quality: dalleQuality,
+              style: dalleStyle,
               response_format: "b64_json",
             }),
           }).then(async (res) => {

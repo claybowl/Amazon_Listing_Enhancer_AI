@@ -179,7 +179,7 @@ export const AI_MODELS: AIModel[] = [
 
   // Image Models - Gemini
   {
-    id: "imagen-3.0-generate-001",
+    id: "imagen-3.0-generate-002",
     name: "Imagen 3",
     provider: AIProvider.Gemini,
     type: ModelType.Image,
@@ -193,6 +193,21 @@ export const AI_MODELS: AIModel[] = [
     isAvailable: true,
     apiKeyRequired: true,
     defaultModel: true,
+  },
+  {
+    id: "gemini-2.0-flash-preview-image-generation",
+    name: "Gemini 2.0 Flash Image Generation",
+    provider: AIProvider.Gemini,
+    type: ModelType.Image,
+    description: "Conversational image generation and editing with Gemini 2.0 Flash (Free tier available)",
+    capabilities: [
+      "Conversational image generation",
+      "Image editing",
+      "Contextual understanding",
+      "Free tier available",
+    ],
+    isAvailable: true,
+    apiKeyRequired: true,
   },
   {
     id: "imagen-2",

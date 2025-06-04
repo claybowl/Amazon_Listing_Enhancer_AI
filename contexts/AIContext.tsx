@@ -105,6 +105,14 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
       console.log("Final server API keys status:", newServerApiKeys)
       setServerApiKeys(newServerApiKeys)
 
+      // Debug: Log available models for each provider
+      Object.entries(newServerApiKeys).forEach(([provider, hasKey]) => {
+        if (hasKey) {
+          const models = getModelsByProvider(provider as AIProvider)
+          console.log(`${provider} models available:`, models.map(m => m.name))
+        }
+      })
+
       // Auto-select best available models based on server configuration
       if (!selectedTextModel) {
         const availableTextModels = [
@@ -123,8 +131,9 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
       if (!selectedImageModel) {
         const availableImageModels = [
           getModelById("dall-e-3"), // OpenAI DALL-E 3
-          getModelById("stable-diffusion-xl"), // Stability AI
-          getModelById("imagen-3"), // Gemini Imagen
+          getModelById("stable-diffusion-xl-1024-v1-0"), // Stability AI
+          getModelById("gemini-2.0-flash-preview-image-generation"), // Gemini 2.0 Flash (Free)
+          getModelById("imagen-3.0-generate-002"), // Gemini Imagen (Paid)
           getDefaultModel(ModelType.Image), // Fallback
         ].filter((model) => model && newServerApiKeys[model.provider])
 

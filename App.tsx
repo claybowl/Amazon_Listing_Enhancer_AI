@@ -69,7 +69,7 @@ const AppContent: React.FC = () => {
   // SourceImageOptionsForApp interface is removed from here
 
   const handleImageGeneration = useCallback(
-    async (prompt: string, numberOfImages: number, sourceImageOptions?: SourceImageOptions) => { // Use imported SourceImageOptions
+    async (prompt: string, numberOfImages: number, sourceImageOptions?: SourceImageOptions, generationOptions?: any) => { // Use imported SourceImageOptions and add generationOptions
       if (!selectedImageModel) {
         setError("No image generation model selected.")
         return
@@ -84,8 +84,10 @@ const AppContent: React.FC = () => {
       setError(null)
 
       try {
-        // Removed apiKeys[selectedImageModel.provider] from the call
-        const images = await generateProductImages(selectedImageModel, prompt, numberOfImages, sourceImageOptions)
+        console.log(`Starting image generation with model: ${selectedImageModel.name}`)
+        console.log(`Generation options:`, generationOptions)
+        // Pass generation options to the service
+        const images = await generateProductImages(selectedImageModel, prompt, numberOfImages, sourceImageOptions, generationOptions)
 
         setEnhancedDetails((prevDetails) => {
           if (!prevDetails) return null

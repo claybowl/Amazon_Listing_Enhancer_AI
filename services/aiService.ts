@@ -99,6 +99,7 @@ export async function generateProductImages(
   prompt: string,
   numberOfImages = 1,
   sourceImageOptions?: SourceImageOptions, // Use imported type
+  generationOptions?: any, // Universal generation options (aspect ratio, style, etc.)
 ): Promise<string[]> {
   if (model.type !== ModelType.Image) {
     throw new Error(`Model ${model.id} is not an image generation model`)
@@ -110,7 +111,12 @@ export async function generateProductImages(
       endpoint = "/api/openai/generate-images"
       break
     case AIProvider.Gemini:
-      endpoint = "/api/gemini/generate-images"
+      // Route to different endpoints based on the specific Gemini model
+      if (model.id === "gemini-2.0-flash-preview-image-generation") {
+        endpoint = "/api/gemini/generate-images-flash"
+      } else {
+        endpoint = "/api/gemini/generate-images" // For Imagen 3 and other models
+      }
       break
     case AIProvider.Stability:
       endpoint = "/api/stability/generate-images"
@@ -127,6 +133,14 @@ export async function generateProductImages(
 
   try {
     console.log(`Making image request to: ${endpoint}`)
+    console.log(`Using model: ${model.name} (${model.id}) from provider: ${model.provider}`)
+    console.log(`Request payload:`, {
+      modelId: model.id,
+      prompt: prompt.substring(0, 100) + "...",
+      numberOfImages,
+      hasSourceImage: !!sourceImageOptions?.sourceImage,
+      imageStrength: sourceImageOptions?.imageStrength,
+    })
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -139,6 +153,7 @@ export async function generateProductImages(
         numberOfImages,
         ...(sourceImageOptions?.sourceImage && { sourceImage: sourceImageOptions.sourceImage }),
         ...(sourceImageOptions?.imageStrength !== undefined && { imageStrength: sourceImageOptions.imageStrength }),
+        ...(generationOptions && generationOptions), // Pass along universal generation options
       }),
     })
 

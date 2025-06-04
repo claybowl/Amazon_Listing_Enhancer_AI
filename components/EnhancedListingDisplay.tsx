@@ -3,7 +3,7 @@
 import type React from "react"
 import { useMemo, useCallback } from "react" // Removed useState as setInternalIsGeneratingImages is not used here directly
 import { ImageGenerationNotice } from "./ImageGenerationNotice"
-import ImagenAdvancedControls from "./ImagenAdvancedControls" // Default import
+import UniversalImageGenerator from "./UniversalImageGenerator" // Default import
 import { useAI } from "../contexts/AIContext"
 
 // Define SourceImageOptions locally for this component's specific needs
@@ -30,7 +30,7 @@ export interface EnhancedProductDetails {
 
 interface EnhancedListingDisplayProps {
   details: EnhancedProductDetails
-  onGenerateImages: (prompt: string, numberOfImages: number, sourceImageOptions?: SourceImageOptions) => Promise<void>
+  onGenerateImages: (prompt: string, numberOfImages: number, sourceImageOptions?: SourceImageOptions, generationOptions?: any) => Promise<void>
   isGeneratingImages: boolean // This prop indicates if *any* image generation is happening at App level
   setEnhancedDetails: React.Dispatch<React.SetStateAction<EnhancedProductDetails | null>>
 }
@@ -73,7 +73,7 @@ const EnhancedListingDisplay: React.FC<EnhancedListingDisplayProps> = ({
         prompt: initialImagePrompt, // Use the consistent initial prompt for context
       }
       // Assuming onGenerateImages can handle sourceImageOptions for img2img
-      await onGenerateImages(initialImagePrompt, 1, sourceOptions)
+      await onGenerateImages(initialImagePrompt, 1, sourceOptions, undefined)
     },
     [initialImagePrompt, onGenerateImages, selectedImageModel],
   )
@@ -197,41 +197,15 @@ const EnhancedListingDisplay: React.FC<EnhancedListingDisplayProps> = ({
         </div>
       </div>
 
-      {/* ImagenAdvancedControls handles its own generation trigger */}
-      <ImagenAdvancedControls
-        // Removed onGenerate prop
+      {/* UniversalImageGenerator works with any selected model */}
+      <UniversalImageGenerator
         isGenerating={isGeneratingImages} // Pass the overall generating state
         initialPrompt={initialImagePrompt}
-        onImagesGenerated={(newImages, metadata) => {
-          // This callback is from ImagenAdvancedControls after it generates images
-          setEnhancedDetails((prevDetails) => {
-            if (!prevDetails) {
-              // This case should ideally be handled by ensuring details is always an object
-              // or by initializing a new details object here.
-              // For now, returning null or an empty object might be safest.
-              console.warn("setEnhancedDetails called when prevDetails is null. This might indicate an issue.")
-              return {
-                name: details?.name || "Product", // Fallback name
-                originalDescription: details?.originalDescription || "",
-                enhancedDescription: details?.enhancedDescription || "",
-                originalImageUrls: details?.originalImageUrls || [],
-                generatedImages: newImages,
-                generatedImagePrompts: [metadata?.prompt || initialImagePrompt],
-              }
-            }
-            const updatedPrompts = [...(prevDetails.generatedImagePrompts || [])]
-            if (metadata?.prompt && !updatedPrompts.includes(metadata.prompt)) {
-              updatedPrompts.push(metadata.prompt)
-            } else if (!metadata?.prompt && !updatedPrompts.includes(initialImagePrompt)) {
-              updatedPrompts.push(initialImagePrompt)
-            }
-
-            return {
-              ...prevDetails,
-              generatedImagePrompts: updatedPrompts,
-              generatedImages: [...(prevDetails.generatedImages || []), ...newImages],
-            }
-          })
+        onImagesGenerated={async (prompt, numberOfImages, options) => {
+          // Call the main onGenerateImages prop from App.tsx which handles the actual generation
+          if (onGenerateImages) {
+            await onGenerateImages(prompt, numberOfImages, undefined, options)
+          }
         }}
       />
     </div>

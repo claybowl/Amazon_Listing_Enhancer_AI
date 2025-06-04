@@ -1,53 +1,84 @@
-import { GoogleGenerativeAI } from "@google/generative-ai"
 import { type NextRequest, NextResponse } from "next/server"
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY
+export async function POST(request: NextRequest) {
+  console.log(
+    "Attempting to read GEMINI_API_KEY from Vercel env:",
+    process.env.GEMINI_API_KEY ? "Key Found (masked)" : "Key NOT Found",
+  )
+  console.log(
+    "Attempting to read GOOGLE_GEN_AI_API_KEY from Vercel env:",
+    process.env.GOOGLE_GEN_AI_API_KEY ? "Key Found (masked)" : "Key NOT Found",
+  )
 
-const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null
+  // Add a masked log if the key is found
+  if (process.env.GEMINI_API_KEY) {
+    console.log("GEMINI_API_KEY starts with:", process.env.GEMINI_API_KEY.substring(0, 5))
+  }
+  if (process.env.GOOGLE_GEN_AI_API_KEY) {
+    console.log("GOOGLE_GEN_AI_API_KEY starts with:", process.env.GOOGLE_GEN_AI_API_KEY.substring(0, 5))
+  }
 
-const model = genAI?.getGenerativeModel({ model: "gemini-1.5-pro" })
-
-export async function POST(req: NextRequest) {
   try {
-    if (!model) {
-      return NextResponse.json({
-        success: false,
-        message: "Gemini API key not configured.",
-      })
+    // Check if API key is configured
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEN_AI_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({ error: "Gemini API Key not configured on the server." }, { status: 500 })
     }
 
-    const { description, productName, tone, style } = await req.json() // productName is not used in current prompt
+    // Parse request body
+    const { originalDescription, productName, modelId } = await request.json()
 
-    if (!description) {
-      return NextResponse.json({
-        success: false,
-        message: "No description provided.",
-      })
+    if (!originalDescription || !productName) {
+      return NextResponse.json(
+        { error: "Missing required fields: originalDescription or productName" },
+        { status: 400 },
+      )
     }
 
-    let prompt = `Improve the following product description to be more engaging and persuasive. Focus on highlighting the key benefits and features in a way that resonates with potential customers. Keep the tone professional and appealing.`
-    if (productName) { // Though not in the original prompt, if provided, it could be useful
-      prompt += ` The product is named "${productName}".`
-    }
-    prompt += `\nDescription: ${description}`
+    // Import Google Generative AI dynamically
+    const { GoogleGenerativeAI } = await import("@google/generative-ai")
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({ model: modelId || "gemini-1.5-pro" })
 
-    if (tone) {
-      prompt += `\n\nInstructions:\n- The tone of the description should be ${tone}.`
-    }
-    if (style) {
-      prompt += `${tone ? "" : "\n\nInstructions:"}\n- The output style for the description should be primarily ${style}.`
-    }
-    // The Gemini model here is configured for JSON output, but the prompt doesn't ask for a specific JSON structure.
-    // This might be problematic. The original prompt did not specify JSON output.
-    // The previous code had `responseMimeType: "application/json"` but the prompt was not asking for JSON.
-    // For now, I will keep `responseMimeType: "application/json"` but the prompt does not enforce a specific JSON structure.
-    // This means the model might return plain text, or JSON, depending on its training.
-    // The original code `const enhancedDescription = response.text()` suggests it was expecting text.
+    const originalCharCount = originalDescription.length
+    const originalWordCount = originalDescription.trim().split(/\s+/).filter(Boolean).length
+
+    const prompt = `You are an expert Amazon listing copywriter.
+Your task is to rewrite the provided product description for "${productName}" and provide context for your changes.
+
+Original Product Name: "${productName}"
+Original Description:
+---
+${originalDescription}
+---
+
+Original Description Length:
+- Characters: ${originalCharCount}
+- Words: ${originalWordCount}
+
+Instructions:
+1. Rewrite the "Original Description" to be highly compelling, benefit-driven, and optimized for Amazon.
+2. The "enhanced_description" MUST be plain text only, without any markdown formatting (e.g., no \`\`\`, *, #).
+3. The length (character and word count) of your "enhanced_description" should be in a similar range to the "Original Description Length" provided above. Aim for approximately the same number of words.
+4. Focus on:
+  - Clear and concise language.
+  - Highlighting key benefits and unique selling points from the original.
+  - Engaging tone that encourages purchase.
+  - Persuasive and professional language.
+5. Provide a brief "generation_context" (around 20-50 words) explaining your approach, key changes made, or focus areas during the rewrite.
+
+Output ONLY a valid JSON object with the following exact schema:
+{
+"enhanced_description": "string",
+"generation_context": "string"
+}
+
+Do NOT include any other text, explanations, or markdown formatting outside of this JSON object. Just the JSON.`
 
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.6,
         topK: 40,
         topP: 0.95,
         responseMimeType: "application/json",
@@ -55,35 +86,43 @@ export async function POST(req: NextRequest) {
     })
 
     const response = result.response
-    const textOutput = response.text()
+    const jsonStr = response.text()
 
-    // Attempt to return a structure similar to the OpenAI endpoint for consistency,
-    // but Gemini here is not explicitly asked to produce this JSON structure.
-    // This part might need future refinement if Gemini doesn't naturally return compatible output.
-    // For now, we'll assume the main output is the description, and context is generic.
-    try {
-      // Check if the output is already JSON
-      const parsedJson = JSON.parse(textOutput)
-      if (parsedJson.enhanced_description && parsedJson.generation_context) {
-        return NextResponse.json({
-          enhancedDescription: parsedJson.enhanced_description,
-          generationContext: parsedJson.generation_context,
-        })
-      }
-      // If it's JSON but not the expected structure, wrap it.
-      return NextResponse.json({
-        enhancedDescription: textOutput, // Or parsedJson if it's a simple string in JSON
-        generationContext: "Description generated by Gemini.",
-      })
-    } catch (e) {
-      // If not JSON, assume plain text
-      return NextResponse.json({
-        enhancedDescription: textOutput,
-        generationContext: "Description generated by Gemini. Tone/style instructions were applied if provided.",
-      })
+    let jsonStrTrimmed = jsonStr.trim()
+    const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s
+    const match = jsonStrTrimmed.match(fenceRegex)
+    if (match && match[2]) {
+      jsonStrTrimmed = match[2].trim()
     }
-  } catch (error: any) {
-    console.error("Error enhancing description with Gemini:", error)
-    return NextResponse.json({ success: false, message: error.message })
+
+    let parsedData
+    try {
+      parsedData = JSON.parse(jsonStrTrimmed)
+    } catch (e) {
+      console.error("Failed to parse JSON response:", jsonStrTrimmed, e)
+      return NextResponse.json(
+        { error: "Failed to parse AI response as JSON. The response may not be in the expected format." },
+        { status: 500 },
+      )
+    }
+
+    if (!parsedData.enhanced_description || typeof parsedData.generation_context === "undefined") {
+      console.error("Parsed JSON is missing required fields:", parsedData)
+      return NextResponse.json(
+        { error: "AI response JSON is missing 'enhanced_description' or 'generation_context'." },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({
+      enhancedDescription: parsedData.enhanced_description.trim(),
+      generationContext: parsedData.generation_context.trim(),
+    })
+  } catch (error) {
+    console.error("Error in Gemini enhance-description API route:", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "An unknown error occurred" },
+      { status: 500 },
+    )
   }
 }

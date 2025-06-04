@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 
 // Get API key from environment variables
-const REPLICATE_API_KEY = process.env.REPLICATE_API_KEY || "r8_0HPEdTSBtwh0fJUGVNHD5v1bh4e7DoH2KdX4S"
+const REPLICATE_API_KEY = process.env.REPLICATE_API_KEY
 
 export async function HEAD(request: NextRequest) {
   // Simple HEAD request handler to check if the route exists
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const {
       prompt,
       numberOfImages = 1,
-      modelId = "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
+      modelId = "stability-ai/sdxl:7762fd07cf82c948538e41f63f77d685e02b063e37e496e96eefd46c929f9bdc",
     } = body
 
     if (!prompt) {
@@ -83,11 +83,18 @@ Generate an image that makes this specific product look highly desirable in its 
       })
 
       if (!startResponse.ok) {
-        const error = await startResponse.json()
-        return NextResponse.json(
-          { error: error.detail || "Failed to start prediction with Replicate" },
-          { status: startResponse.status },
-        )
+        const errorText = await startResponse.text()
+        console.error(`Replicate API Error (${startResponse.status}):`, errorText)
+
+        let errorMessage = "Failed to start prediction with Replicate"
+        try {
+          const error = JSON.parse(errorText)
+          errorMessage = error.detail || error.message || errorMessage
+        } catch (parseError) {
+          errorMessage = errorText || errorMessage
+        }
+
+        return NextResponse.json({ error: errorMessage }, { status: startResponse.status })
       }
 
       const prediction = await startResponse.json()
@@ -101,11 +108,14 @@ Generate an image that makes this specific product look highly desirable in its 
     for (const predictionId of imagePromises) {
       let status = "starting"
       let result
+      let pollCount = 0
+      const maxPolls = 60 // Maximum 60 seconds of polling
 
       // Poll until the prediction is complete or fails
-      while (status !== "succeeded" && status !== "failed" && status !== "canceled") {
+      while (status !== "succeeded" && status !== "failed" && status !== "canceled" && pollCount < maxPolls) {
         // Wait for 1 second before polling again
         await new Promise((resolve) => setTimeout(resolve, 1000))
+        pollCount++
 
         const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
           headers: {
@@ -114,24 +124,32 @@ Generate an image that makes this specific product look highly desirable in its 
         })
 
         if (!pollResponse.ok) {
-          const error = await pollResponse.json()
-          return NextResponse.json(
-            { error: error.detail || "Failed to poll prediction with Replicate" },
-            { status: pollResponse.status },
-          )
+          const errorText = await pollResponse.text()
+          console.error(`Replicate Poll Error (${pollResponse.status}):`, errorText)
+
+          let errorMessage = "Failed to poll prediction with Replicate"
+          try {
+            const error = JSON.parse(errorText)
+            errorMessage = error.detail || error.message || errorMessage
+          } catch (parseError) {
+            errorMessage = errorText || errorMessage
+          }
+
+          return NextResponse.json({ error: errorMessage }, { status: pollResponse.status })
         }
 
         result = await pollResponse.json()
         status = result.status
+      }
 
-        // If we've been polling for too long, break to avoid timeout
-        if (result.metrics?.predict_time && result.metrics.predict_time > 60) {
-          return NextResponse.json({ error: "Prediction timed out after 60 seconds" }, { status: 408 })
-        }
+      if (pollCount >= maxPolls) {
+        return NextResponse.json({ error: "Prediction timed out after 60 seconds" }, { status: 408 })
       }
 
       if (status === "failed" || status === "canceled") {
-        return NextResponse.json({ error: result.error || "Prediction failed or was canceled" }, { status: 500 })
+        const errorMessage = result.error || `Prediction ${status}`
+        console.error("Replicate prediction failed:", errorMessage)
+        return NextResponse.json({ error: errorMessage }, { status: 500 })
       }
 
       // The output is an array of image URLs

@@ -1,11 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
-import OpenAI from "openai"
 
 // Get API key from environment variables
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY
-
-// Initialize the OpenAI client
-const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null
 
 export async function HEAD(request: NextRequest) {
   // Simple HEAD request handler to check if the route exists
@@ -15,7 +11,7 @@ export async function HEAD(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // Check if API key is configured
-    if (!OPENAI_API_KEY || !openai) {
+    if (!OPENAI_API_KEY) {
       return NextResponse.json({ error: "OpenAI API Key not configured on the server." }, { status: 500 })
     }
 
@@ -27,56 +23,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 })
     }
 
-    const { prompt, numberOfImages = 1, sourceImage, modelId = "dall-e-3" } = body // modelId can be passed for future flexibility
+    const { prompt, numberOfImages = 1, sourceImage, modelId = "dall-e-3" } = body
 
     if (!prompt && !sourceImage) {
       return NextResponse.json({ error: "Missing required field: prompt or sourceImage" }, { status: 400 })
     }
-    if (sourceImage && prompt) {
-      // OpenAI variations API does not use a text prompt.
-      // If we were using edits, it would. For now, clarify this.
-      console.warn("OpenAI image variations was called with a prompt. The prompt will be ignored for variations.")
+
+    if (numberOfImages < 1 || numberOfImages > 4) {
+      return NextResponse.json(
+        { error: "Number of images must be between 1 and 4 for this configuration." },
+        { status: 400 },
+      )
     }
 
-
-    if (numberOfImages < 1 || numberOfImages > 4) { // DALL-E 3 allows 1, DALL-E 2 allows up to 10 for variations.
-      return NextResponse.json({ error: "Number of images must be between 1 and 4 for this configuration." }, { status: 400 })
-    }
-
-    let images: (string | undefined)[] = []
+    let images: string[] = []
 
     if (sourceImage) {
-      // Image Variations using DALL-E 2
-      // DALL-E 3 does not support image variations. We must use DALL-E 2.
-      // The 'model' parameter is not used in `createVariation` but implies dall-e-2.
-      if (modelId === "dall-e-3") {
-        console.warn("DALL-E 3 does not support variations. Switching to DALL-E 2 for variations.")
-      }
+      // Image Variations using DALL-E 2 (DALL-E 3 doesn't support variations)
+      console.log("Creating image variations with DALL-E 2")
 
+      // Convert base64 to blob for form data
       const imageBuffer = Buffer.from(sourceImage, "base64")
-      // OpenAI SDK expects a File-like object. We need to provide name and type.
-      const imageFile = {
-        name: "source_image.png",
-        type: "image/png", // Assuming PNG, adjust if type is known or different
-        buffer: imageBuffer,
+      const formData = new FormData()
+      formData.append("image", new Blob([imageBuffer], { type: "image/png" }), "image.png")
+      formData.append("n", numberOfImages.toString())
+      formData.append("size", "1024x1024")
+      formData.append("response_format", "b64_json")
+
+      const response = await fetch("https://api.openai.com/v1/images/variations", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: { message: "Unknown error" } }))
+        console.error("OpenAI variations API error:", errorData)
+        return NextResponse.json(
+          { error: errorData.error?.message || "Failed to create image variations" },
+          { status: response.status },
+        )
       }
 
-      // The SDK's createVariation method expects the image as an Uploadable.
-      // The actual parameter type for the image is `File | ReadStream | Buffer`.
-      // However, the SDK internally converts it. Let's try passing the buffer directly with a cast.
-      // If this fails, we might need to create a more elaborate File-like object or use a ReadStream.
-
-      // HACK: Cast the buffer to `any` to satisfy the `Uploadable` type.
-      // The SDK should handle this if `name` is provided at the top level of options.
-      // This is a common workaround for this SDK.
-      const variationResult = await openai.images.createVariation({
-        image: imageBuffer as any, // Pass buffer directly
-        // model: "dall-e-2", // Not explicitly set, DALL-E 2 is default for variations
-        n: numberOfImages,
-        size: "1024x1024", // DALL-E 2 supports 256x256, 512x512, 1024x1024
-        response_format: "b64_json",
-      })
-      images = variationResult.data.map((img) => img.b64_json).filter(Boolean)
+      const data = await response.json()
+      images = data.data.map((img: any) => img.b64_json).filter(Boolean)
     } else if (prompt) {
       // Text-to-Image generation
       const fullPrompt = `**VERY IMPORTANT: Read all instructions carefully.**
@@ -91,7 +83,7 @@ ${prompt}
 ---
 
 **Image Style and Scene (Secondary - This is what you change around the product):**
-While the product depiction MUST remain true to the "Product Context", lounging scene and environment SHOULD be changed to be:
+While the product depiction MUST remain true to the "Product Context", the surrounding scene and environment SHOULD be changed to be:
 - Highly appealing and fashionable.
 - Professional and commercial quality, suitable for a premium Amazon listing.
 - Well-lit, clear, and high-resolution.
@@ -100,21 +92,35 @@ While the product depiction MUST remain true to the "Product Context", lounging 
 **Key Rule: Do not change the product's described features. Only change the scene, background, and styling around the product.**
 Generate an image that makes this specific product look highly desirable in its new fashionable environment.`
 
-      // DALL-E 3 only supports n=1. So we loop if numberOfImages > 1.
+      // DALL-E 3 only supports n=1, so we loop if numberOfImages > 1
       const imagePromises = []
       for (let i = 0; i < numberOfImages; i++) {
         imagePromises.push(
-          openai.images.generate({
-            model: modelId, // Use the provided modelId, defaults to dall-e-3
-            prompt: fullPrompt,
-            n: 1, // Always 1 for DALL-E 3 per call
-            size: "1024x1024",
-            response_format: "b64_json",
+          fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: modelId,
+              prompt: fullPrompt,
+              n: 1, // Always 1 for DALL-E 3
+              size: "1024x1024",
+              response_format: "b64_json",
+            }),
+          }).then(async (res) => {
+            if (!res.ok) {
+              const errorData = await res.json().catch(() => ({ error: { message: "Unknown error" } }))
+              throw new Error(errorData.error?.message || "Failed to generate image")
+            }
+            return res.json()
           }),
         )
       }
+
       const results = await Promise.all(imagePromises)
-      images = results.flatMap((result) => result.data.map((img) => img.b64_json)).filter(Boolean)
+      images = results.flatMap((result) => result.data.map((img: any) => img.b64_json)).filter(Boolean)
     }
 
     if (images.length === 0) {

@@ -179,41 +179,65 @@ export const AI_MODELS: AIModel[] = [
 
   // Image Models - Gemini
   {
-    id: "imagen-3",
+    id: "imagen-3.0-generate-001",
     name: "Imagen 3",
     provider: AIProvider.Gemini,
     type: ModelType.Image,
-    description: "Google's advanced image generation model",
-    capabilities: ["High-quality images", "Photorealistic outputs", "Strong prompt following"],
+    description: "Google's latest and most advanced image generation model with enhanced quality and style control",
+    capabilities: [
+      "High-quality images",
+      "Advanced style control",
+      "Multiple aspect ratios",
+      "Post-processing options",
+    ],
     isAvailable: true,
     apiKeyRequired: true,
     defaultModel: true,
   },
+  {
+    id: "imagen-2",
+    name: "Imagen 2",
+    provider: AIProvider.Gemini,
+    type: ModelType.Image,
+    description: "Google's previous generation image model",
+    capabilities: ["Good quality images", "Reliable generation", "Fast processing"],
+    isAvailable: true,
+    apiKeyRequired: true,
+  },
 
   // Image Models - Stability AI
   {
-    id: "stable-diffusion-xl",
-    name: "Stable Diffusion XL",
+    id: "stable-diffusion-xl-1024-v1-0",
+    name: "Stable Diffusion XL 1024",
     provider: AIProvider.Stability,
     type: ModelType.Image,
-    description: "Stability AI's flagship image generation model",
-    capabilities: ["High-quality images", "Artistic styles", "Detailed control"],
+    description: "Stability AI's flagship SDXL model for high-quality 1024x1024 images",
+    capabilities: ["High-quality images", "1024x1024 resolution", "Detailed control"],
+    isAvailable: true,
+    apiKeyRequired: true,
+  },
+  {
+    id: "stable-diffusion-v1-6",
+    name: "Stable Diffusion v1.6",
+    provider: AIProvider.Stability,
+    type: ModelType.Image,
+    description: "Classic Stable Diffusion model for reliable image generation",
+    capabilities: ["Reliable generation", "Good quality", "Fast processing"],
+    isAvailable: true,
+    apiKeyRequired: true,
+  },
+  {
+    id: "stable-diffusion-512-v2-1",
+    name: "Stable Diffusion 512 v2.1",
+    provider: AIProvider.Stability,
+    type: ModelType.Image,
+    description: "Stable Diffusion v2.1 optimized for 512x512 images",
+    capabilities: ["512x512 resolution", "Good quality", "Efficient processing"],
     isAvailable: true,
     apiKeyRequired: true,
   },
 
   // Image Models - Replicate
-  {
-    id: "midjourney",
-    name: "Midjourney (via Replicate)",
-    provider: AIProvider.Replicate,
-    type: ModelType.Image,
-    description: "Access to Midjourney-like models through Replicate",
-    capabilities: ["Artistic images", "Creative compositions", "Unique styles"],
-    isAvailable: true,
-    apiKeyRequired: true,
-  },
-  // More Image Models - Replicate
   {
     id: "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
     name: "Stable Diffusion XL (via Replicate)",
@@ -297,37 +321,6 @@ export const AI_MODELS: AIModel[] = [
     apiKeyRequired: true,
   },
 
-  // Image Models - OpenRouter
-  {
-    id: "stability/sdxl",
-    name: "Stable Diffusion XL (via OpenRouter)",
-    provider: AIProvider.OpenRouter,
-    type: ModelType.Image,
-    description: "Stability AI's SDXL accessed through OpenRouter",
-    capabilities: ["High-quality images", "Artistic styles", "Detailed control"],
-    isAvailable: true,
-    apiKeyRequired: true,
-  },
-  {
-    id: "anthropic/claude-3-opus-vision",
-    name: "Claude 3 Opus Vision (via OpenRouter)",
-    provider: AIProvider.OpenRouter,
-    type: ModelType.Image,
-    description: "Anthropic's Claude 3 Opus with vision capabilities, accessed through OpenRouter",
-    capabilities: ["Image understanding", "Visual reasoning", "Multimodal capabilities"],
-    isAvailable: true,
-    apiKeyRequired: true,
-  },
-  {
-    id: "segmind/sdxl-lightning",
-    name: "SDXL Lightning (via OpenRouter)",
-    provider: AIProvider.OpenRouter,
-    type: ModelType.Image,
-    description: "Fast version of SDXL, accessed through OpenRouter",
-    capabilities: ["Fast generation", "Good quality", "Efficient processing"],
-    isAvailable: true,
-    apiKeyRequired: true,
-  },
   // Text Models - Groq
   {
     id: "llama-3.1-70b-versatile",

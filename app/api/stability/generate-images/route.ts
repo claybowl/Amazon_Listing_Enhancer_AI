@@ -36,14 +36,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (numberOfImages < 1 || numberOfImages > 10) {
-      // Stability API allows up to 10 images for text2image, 1 for image2image through the standard API.
-      // However, some specific model versions or enterprise plans might differ.
-      // For img2img, usually 1 image is returned per call. We might need to loop if multiple are requested.
-      // For now, we'll adjust this check slightly and handle sample count below.
       return NextResponse.json({ error: "Number of images must be between 1 and 10." }, { status: 400 })
     }
 
-    const engineId = modelId // In Stability API v1, modelId is often the engineId
+    // Map model IDs to correct engine IDs
+    const modelToEngineMap: Record<string, string> = {
+      "stable-diffusion-xl": "stable-diffusion-xl-1024-v1-0",
+      "stable-diffusion-xl-1024-v1-0": "stable-diffusion-xl-1024-v1-0",
+      "stable-diffusion-v1-6": "stable-diffusion-v1-6",
+      "stable-diffusion-512-v2-1": "stable-diffusion-512-v2-1",
+    }
+
+    const engineId = modelToEngineMap[modelId] || "stable-diffusion-xl-1024-v1-0"
+
+    console.log(`Using Stability AI engine: ${engineId}`)
 
     let response: Response
     let responseData: any
@@ -58,41 +64,23 @@ export async function POST(request: NextRequest) {
       const formData = new FormData()
       formData.append("init_image", new Blob([imageBuffer]), "init_image.png")
       formData.append("image_strength", imageStrength.toString())
-      formData.append("init_image_mode", "IMAGE_STRENGTH") // Or "STEP_SCHEDULE"
+      formData.append("init_image_mode", "IMAGE_STRENGTH")
       formData.append("text_prompts[0][text]", prompt)
       formData.append("text_prompts[0][weight]", "1")
       formData.append("cfg_scale", "7")
-      formData.append("samples", "1") // Typically 1 for img2img, loop if more needed and supported
+      formData.append("samples", "1")
       formData.append("steps", "30")
-      // Note: Stability API might only return 1 image for img2img per call.
-      // If numberOfImages > 1, you might need to make multiple calls or check if batching is supported for img2img.
-      // For simplicity, this example will request 1 image if sourceImage is present.
-      // Consider adjusting `numberOfImages` or looping for multiple img2img generations.
 
       response = await fetch(`https://api.stability.ai/v1/generation/${engineId}/image-to-image`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${STABILITY_API_KEY}`,
           Accept: "application/json",
-          // Content-Type is set automatically by FormData
         },
         body: formData,
       })
-
-      if (!response.ok) {
-        try {
-          responseData = await response.json()
-        } catch (e) {
-          responseData = { message: response.statusText }
-        }
-        return NextResponse.json(
-          { error: responseData.message || "Failed to generate images with Stability AI (img2img)" },
-          { status: response.status },
-        )
-      }
-      responseData = await response.json()
     } else {
-      // Text-to-Image generation (existing logic)
+      // Text-to-Image generation
       const fullPrompt = `**VERY IMPORTANT: Read all instructions carefully.**
 You are an AI image generator tasked with creating a product image for an Amazon listing.
 
@@ -129,25 +117,48 @@ Generate an image that makes this specific product look highly desirable in its 
             },
           ],
           cfg_scale: 7,
-          height: 1024, // Consider making these configurable or dynamic
+          height: 1024,
           width: 1024,
           samples: numberOfImages,
           steps: 30,
         }),
       })
+    }
 
-      if (!response.ok) {
-        try {
-          responseData = await response.json()
-        } catch (e) {
-          responseData = { message: response.statusText }
-        }
-        return NextResponse.json(
-          { error: responseData.message || "Failed to generate images with Stability AI (text2img)" },
-          { status: response.status },
-        )
+    // Handle response
+    let responseText: string
+    try {
+      responseText = await response.text()
+      console.log(`Stability AI response status: ${response.status}`)
+      console.log(`Stability AI response: ${responseText.substring(0, 500)}...`)
+    } catch (e) {
+      console.error("Error reading Stability AI response:", e)
+      return NextResponse.json({ error: "Failed to read response from Stability AI" }, { status: 500 })
+    }
+
+    if (!response.ok) {
+      let errorMessage = "Failed to generate images with Stability AI"
+      try {
+        responseData = JSON.parse(responseText)
+        errorMessage = responseData.message || responseData.error || errorMessage
+      } catch (e) {
+        errorMessage = responseText || errorMessage
       }
-      responseData = await response.json()
+
+      console.error(`Stability AI error (${response.status}):`, errorMessage)
+      return NextResponse.json({ error: errorMessage }, { status: response.status })
+    }
+
+    try {
+      responseData = JSON.parse(responseText)
+    } catch (e) {
+      console.error("Error parsing Stability AI JSON response:", e)
+      return NextResponse.json({ error: "Invalid JSON response from Stability AI" }, { status: 500 })
+    }
+
+    if (!responseData.artifacts || !Array.isArray(responseData.artifacts)) {
+      console.error("Invalid response structure from Stability AI:", responseData)
+      return NextResponse.json({ error: "Invalid response structure from Stability AI" }, { status: 500 })
     }
 
     const images = responseData.artifacts.map((artifact: any) => artifact.base64)
@@ -156,9 +167,7 @@ Generate an image that makes this specific product look highly desirable in its 
       return NextResponse.json({ error: "No images generated by Stability AI." }, { status: 500 })
     }
 
-    // If img2img was used and numberOfImages > 1, the current code only returns 1 image.
-    // This would be the place to implement looping if multiple variations of the same source image are desired.
-    // For now, it returns what the API gives (typically 1 for img2img).
+    console.log(`Successfully generated ${images.length} images with Stability AI`)
 
     return NextResponse.json({
       images: images,
